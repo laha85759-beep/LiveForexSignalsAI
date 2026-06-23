@@ -239,29 +239,42 @@ def fetch_current_prices() -> dict[str, float]:
     return rates
 
 
-def generate_trade_suggestion(bias: str) -> str | None:
+def compute_confidence(text: str) -> tuple[str, str]:
+    score = sum(1 for word in POSITIVE_KEYWORDS if word in text)
+    score -= sum(1 for word in NEGATIVE_KEYWORDS if word in text)
+    abs_score = abs(score)
+    if abs_score >= 4:
+        level = "High"
+    elif abs_score >= 2:
+        level = "Medium"
+    else:
+        level = "Low"
+    direction = "Bullish" if score > 0 else "Bearish"
+    return direction, level
+
+
+def format_trade_lines(bias: str) -> str | None:
     parts = bias.split()
     if len(parts) != 2:
         return None
-    direction, asset = parts[0], parts[1]
+    direction_str, asset = parts[0], parts[1]
     pairs = TRADE_PAIRS.get(asset)
     if not pairs:
         return None
-    is_bullish = direction == "Bullish"
+    is_bullish = direction_str == "Bullish"
     prices = fetch_current_prices()
-    suggestions = []
-    for pair, multiplier, pip_size in pairs:
-        action = "BUY" if (is_bullish == (multiplier > 0)) else "SELL"
+    lines: list[str] = []
+    for i, (pair, multiplier, pip_size) in enumerate(pairs, 1):
         price = prices.get(pair)
-        if price:
-            entry = round(price, 4)
-            tp = round(price + (50 * pip_size) if action == "BUY" else price - (50 * pip_size), 4)
-            sl = round(price - (20 * pip_size) if action == "BUY" else price + (20 * pip_size), 4)
-            suggestions.append(f"{action} {pair} @ {entry} | TP: {tp} | SL: {sl}")
-        else:
-            suggestions.append(f"{action} {pair}")
-    signal_icon = "BULLISH" if is_bullish else "BEARISH"
-    return f"<b>Trade Ideas [{signal_icon}]:</b> {', '.join(suggestions)}"
+        if not price:
+            lines.append(f"{i}. {pair}")
+            continue
+        is_buy = (is_bullish == (multiplier > 0))
+        entry = round(price, 4)
+        tp = round(price + (50 * pip_size) if is_buy else price - (50 * pip_size), 4)
+        sl = round(price - (20 * pip_size) if is_buy else price + (20 * pip_size), 4)
+        lines.append(f"{i}. {'BUY' if is_buy else 'SELL'} {pair} @ {entry} | TP: {tp} | SL: {sl}")
+    return "\n".join(lines) if lines else None
 
 
 def format_article_message(article: dict[str, Any]) -> str:
@@ -271,23 +284,31 @@ def format_article_message(article: dict[str, Any]) -> str:
     summary = escape((article.get("description") or "No description available.")[:400])
     link = article.get("link") or ""
     bias = infer_bias_signal(article)
+    text = normalize_text(article)
+
+    direction, confidence = "Neutral", "Low"
+    if bias:
+        direction, confidence = compute_confidence(text)
+    trend_icon = "BULLISH" if direction == "Bullish" else "BEARISH" if direction == "Bearish" else "NEUTRAL"
 
     lines = [
-        "<b>Forex News Alert</b>",
+        "<b>FOREX SIGNAL</b>",
+        "----------------------------------------",
         f"<b>Headline:</b> {title}",
-        f"<b>Source:</b> {source}",
-        f"<b>Published:</b> {published}",
+        f"<b>Source:</b> {source} | {published}",
         f"<b>Summary:</b> {summary}",
     ]
 
     if bias:
-        lines.append(f"<b>News Bias:</b> {escape(bias)}")
-        trade_suggestion = generate_trade_suggestion(bias)
-        if trade_suggestion:
-            lines.append(trade_suggestion)
+        lines.append(f"<b>Market Trend:</b> {trend_icon} on {escape(bias.split()[1])} ({confidence} confidence)")
+
+    if bias:
+        trade_block = format_trade_lines(bias)
+        if trade_block:
+            lines.append(f"\n<b>Trade Setup:</b>\n{trade_block}")
 
     if link:
-        lines.append(link)
+        lines.append(f"\n<a href='{escape(link)}'>Read More</a>")
 
     return "\n".join(lines)
 
@@ -323,7 +344,7 @@ def fetch_latest_articles() -> list[dict[str, Any]]:
     return load_newsdata_articles(payload)
 
 
-def is_recent(article: dict[str, Any], max_age_hours: int = 2) -> bool:
+def is_recent(article: dict[str, Any], max_age_hours: int = 48) -> bool:
     pub_date = article.get("pubDate") or ""
     if not pub_date:
         return False
