@@ -17,7 +17,7 @@ NEWSAPI_URL = "https://newsapi.org/v2/everything"
 NEWS_PROVIDER = os.getenv("NEWS_PROVIDER", "auto").strip().lower()
 NEWS_QUERY = os.getenv(
     "NEWS_QUERY",
-    'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR (pound AND boe) OR (yen AND boj) OR (gold AND fed)',
+    'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR (pound AND boe) OR (yen AND boj) OR (gold AND fed) OR (rupee AND rbi) OR (sensex AND market) OR (nifty AND market)',
 )
 FETCH_INTERVAL_SECONDS = int(os.getenv("FETCH_INTERVAL_SECONDS", "900"))
 MAX_ARTICLES_PER_CYCLE = int(os.getenv("MAX_ARTICLES_PER_CYCLE", "5"))
@@ -46,6 +46,14 @@ FOREX_TERMS = {
     "inflation",
     "cpi",
     "nonfarm payrolls",
+    "inr",
+    "rupee",
+    "rbi",
+    "sensex",
+    "nifty",
+    "india market",
+    "bse",
+    "nse",
 }
 
 CURRENCY_HINTS = {
@@ -54,15 +62,19 @@ CURRENCY_HINTS = {
     "GBP": ("gbp", "pound", "boe", "bank of england"),
     "JPY": ("jpy", "yen", "boj", "bank of japan"),
     "XAU": ("xau", "gold", "bullion"),
+    "INR": ("inr", "rupee", "rbi", "india", "sensex", "nifty"),
 }
 
 TRADE_PAIRS = {
-    "USD": [("EUR/USD", -1), ("USD/JPY", 1), ("GBP/USD", -1), ("USD/CAD", 1)],
-    "EUR": [("EUR/USD", 1), ("EUR/GBP", 1)],
-    "GBP": [("GBP/USD", 1), ("EUR/GBP", -1)],
-    "JPY": [("USD/JPY", -1)],
-    "XAU": [("XAU/USD", 1)],
+    "USD": [("EUR/USD", -1, 0.0001), ("USD/JPY", 1, 0.01), ("GBP/USD", -1, 0.0001), ("USD/CAD", 1, 0.0001)],
+    "EUR": [("EUR/USD", 1, 0.0001), ("EUR/GBP", 1, 0.0001)],
+    "GBP": [("GBP/USD", 1, 0.0001), ("EUR/GBP", -1, 0.0001)],
+    "JPY": [("USD/JPY", -1, 0.01)],
+    "XAU": [("XAU/USD", 1, 0.1)],
+    "INR": [("USD/INR", 1, 0.01)],
 }
+
+FOREX_PRICE_API = "https://api.exchangerate-api.com/v4/latest/USD"
 
 POSITIVE_KEYWORDS = {
     "rises",
@@ -199,6 +211,33 @@ def infer_bias_signal(article: dict[str, Any]) -> str | None:
     return f"{direction} {subject}"
 
 
+def fetch_current_prices() -> dict[str, float]:
+    rates: dict[str, float] = {}
+    try:
+        with urlopen(FOREX_PRICE_API, timeout=10) as r:
+            data = json.load(r)
+        base_rates = data.get("rates", {})
+        usd_base = {"USD": 1.0} | base_rates
+        for pair, _, pip in TRADE_PAIRS.get("USD", []):
+            base, quote = pair.split("/")
+            b_rate = usd_base.get(base)
+            q_rate = usd_base.get(quote)
+            if b_rate and q_rate:
+                rates[pair] = q_rate / b_rate
+        for asset, pairs in TRADE_PAIRS.items():
+            for pair, _, _ in pairs:
+                if pair in rates:
+                    continue
+                base, quote = pair.split("/")
+                b_rate = usd_base.get(base)
+                q_rate = usd_base.get(quote)
+                if b_rate and q_rate:
+                    rates[pair] = q_rate / b_rate
+    except Exception:
+        pass
+    return rates
+
+
 def generate_trade_suggestion(bias: str) -> str | None:
     parts = bias.split()
     if len(parts) != 2:
@@ -208,10 +247,18 @@ def generate_trade_suggestion(bias: str) -> str | None:
     if not pairs:
         return None
     is_bullish = direction == "Bullish"
+    prices = fetch_current_prices()
     suggestions = []
-    for pair, multiplier in pairs:
+    for pair, multiplier, pip_size in pairs:
         action = "BUY" if (is_bullish == (multiplier > 0)) else "SELL"
-        suggestions.append(f"{action} {pair}")
+        price = prices.get(pair)
+        if price:
+            entry = round(price, 4)
+            tp = round(price + (50 * pip_size) if action == "BUY" else price - (50 * pip_size), 4)
+            sl = round(price - (20 * pip_size) if action == "BUY" else price + (20 * pip_size), 4)
+            suggestions.append(f"{action} {pair} @ {entry} | TP: {tp} | SL: {sl}")
+        else:
+            suggestions.append(f"{action} {pair}")
     signal_icon = "BULLISH" if is_bullish else "BEARISH"
     return f"<b>Trade Ideas [{signal_icon}]:</b> {', '.join(suggestions)}"
 
