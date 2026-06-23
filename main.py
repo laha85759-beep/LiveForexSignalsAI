@@ -11,10 +11,13 @@ from telegram import Bot
 BOT_TOKEN = os.getenv("BOT_TOKEN", "PLACEHOLDER_TOKEN_REVOKED")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY", "").strip()
+NEWS_API_KEY = os.getenv("NEWS_API_KEY", "").strip()
 NEWSDATA_API_URL = "https://newsdata.io/api/1/latest"
+NEWSAPI_URL = "https://newsapi.org/v2/everything"
+NEWS_PROVIDER = os.getenv("NEWS_PROVIDER", "auto").strip().lower()
 NEWS_QUERY = os.getenv(
     "NEWS_QUERY",
-    "forex OR usd OR eur OR gbp OR jpy OR xauusd OR gold OR fed OR ecb",
+    'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR (pound AND boe) OR (yen AND boj) OR (gold AND fed)',
 )
 FETCH_INTERVAL_SECONDS = int(os.getenv("FETCH_INTERVAL_SECONDS", "900"))
 MAX_ARTICLES_PER_CYCLE = int(os.getenv("MAX_ARTICLES_PER_CYCLE", "5"))
@@ -87,6 +90,14 @@ NEGATIVE_KEYWORDS = {
 }
 
 
+def get_active_provider() -> str:
+    if NEWS_PROVIDER in {"newsdata", "newsapi"}:
+        return NEWS_PROVIDER
+    if NEWS_API_KEY:
+        return "newsapi"
+    return "newsdata"
+
+
 def build_newsdata_url() -> str:
     params = {
         "apikey": NEWSDATA_API_KEY,
@@ -95,6 +106,42 @@ def build_newsdata_url() -> str:
         "category": "business",
     }
     return f"{NEWSDATA_API_URL}?{urlencode(params)}"
+
+
+def build_newsapi_url() -> str:
+    params = {
+        "apiKey": NEWS_API_KEY,
+        "q": NEWS_QUERY,
+        "language": "en",
+        "sortBy": "publishedAt",
+        "pageSize": "25",
+    }
+    return f"{NEWSAPI_URL}?{urlencode(params)}"
+
+
+def normalize_newsdata_article(article: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "article_id": article.get("article_id") or article.get("link") or article.get("title"),
+        "title": article.get("title"),
+        "description": article.get("description"),
+        "link": article.get("link"),
+        "pubDate": article.get("pubDate"),
+        "source_name": article.get("source_name"),
+        "keywords": article.get("keywords") or [],
+    }
+
+
+def normalize_newsapi_article(article: dict[str, Any]) -> dict[str, Any]:
+    source = article.get("source") or {}
+    return {
+        "article_id": article.get("url") or article.get("title") or article.get("publishedAt"),
+        "title": article.get("title"),
+        "description": article.get("description") or article.get("content"),
+        "link": article.get("url"),
+        "pubDate": article.get("publishedAt"),
+        "source_name": source.get("name") or "Unknown source",
+        "keywords": [],
+    }
 
 
 def article_key(article: dict[str, Any]) -> str:
@@ -169,20 +216,35 @@ def format_article_message(article: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def load_articles_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def load_newsdata_articles(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if payload.get("status") not in {None, "success"}:
         raise RuntimeError(f"Newsdata API returned status {payload.get('status')!r}")
     results = payload.get("results") or []
     if not isinstance(results, list):
         raise RuntimeError("Newsdata API payload did not contain a list of results")
-    return [item for item in results if isinstance(item, dict)]
+    return [normalize_newsdata_article(item) for item in results if isinstance(item, dict)]
+
+
+def load_newsapi_articles(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if payload.get("status") != "ok":
+        raise RuntimeError(
+            f"News API returned status {payload.get('status')!r}: {payload.get('message', 'unknown error')}"
+        )
+    articles = payload.get("articles") or []
+    if not isinstance(articles, list):
+        raise RuntimeError("News API payload did not contain a list of articles")
+    return [normalize_newsapi_article(item) for item in articles if isinstance(item, dict)]
 
 
 def fetch_latest_articles() -> list[dict[str, Any]]:
-    url = build_newsdata_url()
+    provider = get_active_provider()
+    url = build_newsapi_url() if provider == "newsapi" else build_newsdata_url()
     with urlopen(url, timeout=30) as response:
         payload = json.load(response)
-    return load_articles_from_payload(payload)
+
+    if provider == "newsapi":
+        return load_newsapi_articles(payload)
+    return load_newsdata_articles(payload)
 
 
 async def send_articles(bot: Bot, chat_id: str, articles: list[dict[str, Any]], seen_keys: set[str]) -> int:
@@ -218,17 +280,24 @@ def validate_config() -> list[str]:
         missing.append("BOT_TOKEN")
     if not TELEGRAM_CHAT_ID:
         missing.append("TELEGRAM_CHAT_ID")
-    if not NEWSDATA_API_KEY:
+
+    provider = get_active_provider()
+    if provider == "newsapi":
+        if not NEWS_API_KEY:
+            missing.append("NEWS_API_KEY")
+    elif not NEWSDATA_API_KEY:
         missing.append("NEWSDATA_API_KEY")
+
     return missing
 
 
 async def worker_loop() -> None:
     bot = Bot(BOT_TOKEN)
     seen_keys: set[str] = set()
+    provider = get_active_provider()
 
     print("LiveForexSignalsAI worker started.")
-    print(f"Polling Newsdata every {FETCH_INTERVAL_SECONDS} seconds.")
+    print(f"Polling {provider} every {FETCH_INTERVAL_SECONDS} seconds.")
 
     while True:
         try:
