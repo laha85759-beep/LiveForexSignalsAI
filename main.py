@@ -56,6 +56,14 @@ CURRENCY_HINTS = {
     "XAU": ("xau", "gold", "bullion"),
 }
 
+TRADE_PAIRS = {
+    "USD": [("EUR/USD", -1), ("USD/JPY", 1), ("GBP/USD", -1), ("USD/CAD", 1)],
+    "EUR": [("EUR/USD", 1), ("EUR/GBP", 1)],
+    "GBP": [("GBP/USD", 1), ("EUR/GBP", -1)],
+    "JPY": [("USD/JPY", -1)],
+    "XAU": [("XAU/USD", 1)],
+}
+
 POSITIVE_KEYWORDS = {
     "rises",
     "rise",
@@ -191,6 +199,23 @@ def infer_bias_signal(article: dict[str, Any]) -> str | None:
     return f"{direction} {subject}"
 
 
+def generate_trade_suggestion(bias: str) -> str | None:
+    parts = bias.split()
+    if len(parts) != 2:
+        return None
+    direction, asset = parts[0], parts[1]
+    pairs = TRADE_PAIRS.get(asset)
+    if not pairs:
+        return None
+    is_bullish = direction == "Bullish"
+    suggestions = []
+    for pair, multiplier in pairs:
+        action = "BUY" if (is_bullish == (multiplier > 0)) else "SELL"
+        suggestions.append(f"{action} {pair}")
+    signal_icon = "BULLISH" if is_bullish else "BEARISH"
+    return f"<b>Trade Ideas [{signal_icon}]:</b> {', '.join(suggestions)}"
+
+
 def format_article_message(article: dict[str, Any]) -> str:
     title = escape(article.get("title") or "Untitled update")
     source = escape(article.get("source_name") or "Unknown source")
@@ -209,6 +234,9 @@ def format_article_message(article: dict[str, Any]) -> str:
 
     if bias:
         lines.append(f"<b>News Bias:</b> {escape(bias)}")
+        trade_suggestion = generate_trade_suggestion(bias)
+        if trade_suggestion:
+            lines.append(trade_suggestion)
 
     if link:
         lines.append(link)
