@@ -32,7 +32,7 @@ def fetch_index_data() -> dict[str, dict]:
     for name, ticker in tickers.items():
         try:
             tk = yf.Ticker(ticker)
-            hist = tk.history(period="1d")
+            hist = tk.history(period="2d")
             if hist.empty:
                 continue
             last = hist["Close"].iloc[-1]
@@ -54,7 +54,7 @@ def fetch_stock_data() -> list[dict]:
     for ticker in TOP_STOCKS:
         try:
             tk = yf.Ticker(ticker)
-            hist = tk.history(period="1d")
+            hist = tk.history(period="2d")
             if hist.empty:
                 continue
             last = hist["Close"].iloc[-1]
@@ -120,6 +120,14 @@ COMMODITIES = {
 CRYPTO = {
     "Bitcoin": "BTC-USD",
     "Ethereum": "ETH-USD",
+    "Solana": "SOL-USD",
+    "XRP": "XRP-USD",
+    "Cardano": "ADA-USD",
+    "Dogecoin": "DOGE-USD",
+    "Polkadot": "DOT-USD",
+    "Avalanche": "AVAX-USD",
+    "Chainlink": "LINK-USD",
+    "Litecoin": "LTC-USD",
 }
 
 US_STOCKS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM"]
@@ -128,7 +136,7 @@ US_STOCKS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM"]
 def fetch_ticker_price(ticker: str) -> dict | None:
     try:
         tk = yf.Ticker(ticker)
-        hist = tk.history(period="1d")
+        hist = tk.history(period="2d")
         if hist.empty:
             return None
         last = hist["Close"].iloc[-1]
