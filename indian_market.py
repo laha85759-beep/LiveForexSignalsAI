@@ -104,6 +104,97 @@ def format_market_snapshot() -> str | None:
     return "\n".join(lines)
 
 
+US_INDICES = {
+    "Dow Jones": "^DJI",
+    "Nasdaq": "^IXIC",
+    "S&P 500": "^GSPC",
+}
+
+COMMODITIES = {
+    "Crude Oil": "CL=F",
+    "Brent Oil": "BZ=F",
+    "Gold": "GC=F",
+    "Silver": "SI=F",
+}
+
+CRYPTO = {
+    "Bitcoin": "BTC-USD",
+    "Ethereum": "ETH-USD",
+}
+
+US_STOCKS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM"]
+
+
+def fetch_ticker_price(ticker: str) -> dict | None:
+    try:
+        tk = yf.Ticker(ticker)
+        hist = tk.history(period="1d")
+        if hist.empty:
+            return None
+        last = hist["Close"].iloc[-1]
+        prev_close = hist["Close"].iloc[0] if len(hist) > 1 else last
+        change = last - prev_close
+        pct = (change / prev_close) * 100 if prev_close else 0
+        return {"price": round(last, 2), "change": round(change, 2), "pct": round(pct, 2)}
+    except Exception:
+        return None
+
+
+def fetch_group_data(group: dict[str, str]) -> list[tuple[str, dict]]:
+    results: list[tuple[str, dict]] = []
+    for name, ticker in group.items():
+        data = fetch_ticker_price(ticker)
+        if data:
+            results.append((name, data))
+    return results
+
+
+def format_group_snapshot(name: str, items: list[tuple[str, dict]]) -> str:
+    lines = [f"<b>{name}</b>"]
+    for label, data in items:
+        arrow = "+" if data["change"] >= 0 else "-"
+        sign = "+" if data["change"] >= 0 else ""
+        lines.append(f"  {arrow} {label}: {data['price']} ({sign}{data['change']} | {sign}{data['pct']}%)")
+    return "\n".join(lines)
+
+
+def format_global_snapshot() -> str | None:
+    parts: list[str] = []
+
+    us = fetch_group_data(US_INDICES)
+    if us:
+        parts.append(format_group_snapshot("US Indices", us))
+
+    commodities = fetch_group_data(COMMODITIES)
+    if commodities:
+        parts.append(format_group_snapshot("Commodities", commodities))
+
+    crypto = fetch_group_data(CRYPTO)
+    if crypto:
+        parts.append(format_group_snapshot("Crypto", crypto))
+
+    us_stocks_list = []
+    for t in US_STOCKS:
+        d = fetch_ticker_price(t)
+        if d:
+            us_stocks_list.append((t, d))
+    if us_stocks_list:
+        sorted_us = sorted(us_stocks_list, key=lambda x: abs(x[1]["pct"]), reverse=True)
+        gainers = [s for s in sorted_us if s[1]["pct"] > 0][:3]
+        losers = [s for s in sorted_us if s[1]["pct"] < 0][:3]
+        lines = ["<b>US Stocks Movers</b>"]
+        if gainers:
+            for s, d in gainers:
+                lines.append(f"  + {s}: {d['price']} (+{d['pct']}%)")
+        if losers:
+            for s, d in losers:
+                lines.append(f"  - {s}: {d['price']} ({d['pct']}%)")
+        if len(lines) > 1:
+            parts.append("\n".join(lines))
+
+    return "\n\n".join(parts) if parts else None
+
+
 def format_nifty_options() -> str | None:
     try:
         tk = yf.Ticker(NIFTY_TICKER)

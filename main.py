@@ -20,7 +20,7 @@ NEWSAPI_URL = "https://newsapi.org/v2/everything"
 NEWS_PROVIDER = os.getenv("NEWS_PROVIDER", "auto").strip().lower()
 NEWS_QUERY = os.getenv(
     "NEWS_QUERY",
-    'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR (pound AND boe) OR (yen AND boj) OR (gold AND fed) OR (rupee AND rbi) OR (sensex AND market) OR (nifty AND market)',
+    'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR (pound AND boe) OR (yen AND boj) OR (gold AND fed) OR (rupee AND rbi) OR (sensex) OR (nifty) OR (bitcoin OR btc OR ethereum OR eth OR crypto) OR (crude oil OR brent OR wti) OR (silver) OR (nasdaq OR "dow jones" OR "s&p 500")',
 )
 FETCH_INTERVAL_SECONDS = int(os.getenv("FETCH_INTERVAL_SECONDS", "900"))
 MAX_ARTICLES_PER_CYCLE = int(os.getenv("MAX_ARTICLES_PER_CYCLE", "5"))
@@ -40,6 +40,12 @@ FOREX_TERMS = {
     "yen",
     "xau",
     "gold",
+    "silver",
+    "xag",
+    "crude",
+    "oil",
+    "brent",
+    "wti",
     "fed",
     "ecb",
     "boe",
@@ -57,6 +63,19 @@ FOREX_TERMS = {
     "india market",
     "bse",
     "nse",
+    "bitcoin",
+    "btc",
+    "ethereum",
+    "eth",
+    "crypto",
+    "cryptocurrency",
+    "nasdaq",
+    "dow jones",
+    "s&p",
+    "sp500",
+    "wall street",
+    "us30",
+    "us100",
 }
 
 CURRENCY_HINTS = {
@@ -65,7 +84,13 @@ CURRENCY_HINTS = {
     "GBP": ("gbp", "pound", "boe", "bank of england"),
     "JPY": ("jpy", "yen", "boj", "bank of japan"),
     "XAU": ("xau", "gold", "bullion"),
+    "XAG": ("xag", "silver"),
+    "OIL": ("crude", "oil", "brent", "wti"),
+    "BTC": ("bitcoin", "btc"),
+    "ETH": ("ethereum", "eth"),
     "INR": ("inr", "rupee", "rbi", "india", "sensex", "nifty"),
+    "US30": ("dow jones", "us30", "djia"),
+    "US100": ("nasdaq", "us100", "ixic"),
 }
 
 TRADE_PAIRS = {
@@ -74,7 +99,13 @@ TRADE_PAIRS = {
     "GBP": [("GBP/USD", 1, 0.0001), ("EUR/GBP", -1, 0.0001)],
     "JPY": [("USD/JPY", -1, 0.01)],
     "XAU": [("XAU/USD", 1, 0.1)],
+    "XAG": [("XAG/USD", 1, 0.01)],
+    "OIL": [("WTI", 1, 0.01), ("BRENT", 1, 0.01)],
+    "BTC": [("BTC/USD", 1, 1.0)],
+    "ETH": [("ETH/USD", 1, 1.0)],
     "INR": [("USD/INR", 1, 0.01)],
+    "US30": [("US30", 1, 1.0)],
+    "US100": [("US100", 1, 1.0)],
 }
 
 FOREX_PRICE_API = "https://api.exchangerate-api.com/v4/latest/USD"
@@ -315,7 +346,10 @@ def format_market_snapshot_block() -> str | None:
         import indian_market as im
         indian = im.format_market_snapshot()
         options = im.format_nifty_options()
+        global_data = im.format_global_snapshot()
         parts = []
+        if global_data:
+            parts.append(global_data)
         if indian:
             parts.append(indian)
         if options:
