@@ -9,6 +9,8 @@ from urllib.request import urlopen
 
 from telegram import Bot
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+
 BOT_TOKEN = "8710452375:AAG-pqR8amkjx772hAYiLC_0WymUcoruVqE"
 TELEGRAM_CHAT_ID = "6207722743"
 NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY", "").strip()
@@ -277,6 +279,52 @@ def format_trade_lines(bias: str) -> str | None:
     return "\n".join(lines) if lines else None
 
 
+def ai_analyze_news(article: dict[str, Any]) -> str | None:
+    try:
+        title = article.get("title", "")
+        desc = (article.get("description") or "")[:200]
+        prompt = (
+            f"News: {title}\n{desc}\n\n"
+            "Give a 1-line trading insight for this forex news. "
+            "Mention direction (bullish/bearish) and which asset. Max 15 words."
+        )
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        import urllib.request as ureq
+        payload = json.dumps({
+            "model": "openai/gpt-oss-20b",
+            "messages": [{"role": "user", "content": prompt}],
+        }).encode()
+        req = ureq.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=payload,
+            headers=headers,
+        )
+        with urlopen(req, timeout=15) as r:
+            data = json.load(r)
+        text = data["choices"][0]["message"]["content"].strip()
+        return escape(text)
+    except Exception:
+        return None
+
+
+def format_market_snapshot_block() -> str | None:
+    try:
+        import indian_market as im
+        indian = im.format_market_snapshot()
+        options = im.format_nifty_options()
+        parts = []
+        if indian:
+            parts.append(indian)
+        if options:
+            parts.append(options)
+        return "\n\n".join(parts) if parts else None
+    except Exception:
+        return None
+
+
 def format_article_message(article: dict[str, Any]) -> str:
     title = escape(article.get("title") or "Untitled update")
     source = escape(article.get("source_name") or "Unknown source")
@@ -306,6 +354,10 @@ def format_article_message(article: dict[str, Any]) -> str:
         trade_block = format_trade_lines(bias)
         if trade_block:
             lines.append(f"\n<b>Trade Setup:</b>\n{trade_block}")
+
+    ai_insight = ai_analyze_news(article)
+    if ai_insight:
+        lines.append(f"\n<b>AI Insight:</b> {ai_insight}")
 
     if link:
         lines.append(f"\n<a href='{escape(link)}'>Read More</a>")
@@ -377,6 +429,19 @@ async def send_articles(bot: Bot, chat_id: str, articles: list[dict[str, Any]], 
 
         if sent_count >= MAX_ARTICLES_PER_CYCLE:
             break
+
+    if sent_count:
+        market_block = format_market_snapshot_block()
+        if market_block:
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"<b>MARKET SUMMARY</b>\n----------------------------------------\n{market_block}",
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
 
     return sent_count
 
