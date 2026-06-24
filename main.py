@@ -18,12 +18,30 @@ NEWS_API_KEY = "f1f7db9dc3354374a5f03aa7652fd49b"
 NEWSDATA_API_URL = "https://newsdata.io/api/1/latest"
 NEWSAPI_URL = "https://newsapi.org/v2/everything"
 NEWS_PROVIDER = os.getenv("NEWS_PROVIDER", "auto").strip().lower()
-NEWS_QUERY = os.getenv(
-    "NEWS_QUERY",
-    'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR (pound AND boe) OR (yen AND boj) OR (gold AND fed) OR (rupee AND rbi) OR (sensex) OR (nifty) OR (bitcoin OR btc OR ethereum OR eth OR crypto OR solana OR ripple OR cardano OR dogecoin) OR (crude oil OR brent OR wti) OR (silver) OR (nasdaq OR "dow jones" OR "s&p 500")',
-)
 FETCH_INTERVAL_SECONDS = int(os.getenv("FETCH_INTERVAL_SECONDS", "900"))
-MAX_ARTICLES_PER_CYCLE = int(os.getenv("MAX_ARTICLES_PER_CYCLE", "5"))
+
+SENT_KEYS_FILE = "sent_articles.json"
+
+FOREX_QUERY = os.getenv(
+    "FOREX_QUERY",
+    'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR '
+    '(pound AND boe) OR (yen AND boj) OR (gold AND fed) OR (rupee AND rbi) OR '
+    '(bitcoin OR btc OR ethereum OR eth OR crypto OR solana OR ripple OR cardano OR dogecoin) OR '
+    '(crude oil OR brent OR wti) OR (silver) OR (nasdaq OR "dow jones" OR "s&p 500")',
+)
+
+INDIA_MARKET_QUERY = os.getenv(
+    "INDIA_MARKET_QUERY",
+    '(sensex OR nifty OR "indian market" OR "india stock" OR "bse" OR "nse" OR '
+    '"rbi" OR "rupee" OR "sebi" OR "indian economy") AND (india OR mumbai)',
+)
+
+INTRADAY_STOCK_QUERY = os.getenv(
+    "INTRADAY_STOCK_QUERY",
+    '(reliance OR tcs OR hdfc OR infosys OR icici OR "hindustan unilever" OR sbi OR '
+    'bharti OR "intraday" OR "stock market today" OR "opening bell" OR "closing bell") '
+    'AND (india OR "bse" OR "nse" OR "bombay stock exchange")',
+)
 
 FOREX_TERMS = {
     "forex",
@@ -92,6 +110,16 @@ FOREX_TERMS = {
     "wall street",
     "us30",
     "us100",
+    "reliance",
+    "tcs",
+    "hdfc",
+    "infosys",
+    "icici",
+    "sbi",
+    "bharti",
+    "nifty 50",
+    "sensex",
+    "bank nifty",
 }
 
 CURRENCY_HINTS = {
@@ -115,6 +143,15 @@ CURRENCY_HINTS = {
     "INR": ("inr", "rupee", "rbi", "india", "sensex", "nifty"),
     "US30": ("dow jones", "us30", "djia"),
     "US100": ("nasdaq", "us100", "ixic"),
+    "NIFTY": ("nifty", "nifty 50", "nse"),
+    "SENSEX": ("sensex", "bse", "bombay stock exchange"),
+    "RELIANCE": ("reliance", "ril"),
+    "TCS": ("tcs", "tata consultancy"),
+    "HDFCBANK": ("hdfc bank", "hdfcbank"),
+    "INFY": ("infosys", "infy"),
+    "ICICIBANK": ("icici bank", "icicibank"),
+    "SBIN": ("sbi", "state bank"),
+    "BHARTI": ("bharti", "airtel"),
 }
 
 TRADE_PAIRS = {
@@ -138,6 +175,8 @@ TRADE_PAIRS = {
     "INR": [("USD/INR", 1, 0.01)],
     "US30": [("US30", 1, 1.0)],
     "US100": [("US100", 1, 1.0)],
+    "NIFTY": [("NIFTY", 1, 1.0)],
+    "SENSEX": [("SENSEX", 1, 1.0)],
 }
 
 FOREX_PRICE_API = "https://api.exchangerate-api.com/v4/latest/USD"
@@ -156,6 +195,13 @@ POSITIVE_KEYWORDS = {
     "beat",
     "higher",
     "upside",
+    "rally",
+    "rallies",
+    "breakout",
+    "bullish",
+    "recovery",
+    "rebound",
+    "upgrade",
 }
 
 NEGATIVE_KEYWORDS = {
@@ -173,7 +219,27 @@ NEGATIVE_KEYWORDS = {
     "lower",
     "downside",
     "cut",
+    "crash",
+    "plunge",
+    "decline",
+    "bearish",
+    "selloff",
+    "downgrade",
+    "slump",
 }
+
+
+def load_seen_keys() -> set[str]:
+    try:
+        with open(SENT_KEYS_FILE) as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
+def save_seen_keys(keys: set[str]) -> None:
+    with open(SENT_KEYS_FILE, "w") as f:
+        json.dump(sorted(keys), f)
 
 
 def get_active_provider() -> str:
@@ -184,20 +250,20 @@ def get_active_provider() -> str:
     return "newsdata"
 
 
-def build_newsdata_url() -> str:
+def build_newsdata_url(query: str) -> str:
     params = {
         "apikey": NEWSDATA_API_KEY,
-        "q": NEWS_QUERY,
+        "q": query,
         "language": "en",
         "category": "business",
     }
     return f"{NEWSDATA_API_URL}?{urlencode(params)}"
 
 
-def build_newsapi_url() -> str:
+def build_newsapi_url(query: str) -> str:
     params = {
         "apiKey": NEWS_API_KEY,
-        "q": NEWS_QUERY,
+        "q": query,
         "language": "en",
         "sortBy": "publishedAt",
         "pageSize": "25",
@@ -255,6 +321,14 @@ def is_forex_relevant(article: dict[str, Any]) -> bool:
     return any(term in text for term in FOREX_TERMS)
 
 
+def identify_asset(article: dict[str, Any]) -> str:
+    text = normalize_text(article)
+    for symbol, hints in CURRENCY_HINTS.items():
+        if any(hint in text for hint in hints):
+            return symbol
+    return "MARKET"
+
+
 def infer_bias_signal(article: dict[str, Any]) -> str | None:
     text = normalize_text(article)
 
@@ -293,6 +367,8 @@ def fetch_current_prices() -> dict[str, float]:
         for asset, pairs in TRADE_PAIRS.items():
             for pair, _, _ in pairs:
                 if pair in rates:
+                    continue
+                if "/" not in pair:
                     continue
                 base, quote = pair.split("/")
                 b_rate = usd_base.get(base)
@@ -373,62 +449,36 @@ def ai_analyze_news(article: dict[str, Any]) -> str | None:
         return None
 
 
-def format_market_snapshot_block() -> str | None:
-    try:
-        import indian_market as im
-        indian = im.format_market_snapshot()
-        options = im.format_nifty_options()
-        global_data = im.format_global_snapshot()
-        parts = []
-        if global_data:
-            parts.append(global_data)
-        if indian:
-            parts.append(indian)
-        if options:
-            parts.append(options)
-        return "\n\n".join(parts) if parts else None
-    except Exception:
-        return None
+def ensure_summary(article: dict[str, Any]) -> str:
+    summary = article.get("description") or article.get("content") or ""
+    summary = summary.strip()
+    if summary:
+        return escape(summary[:400])
+    title = article.get("title") or ""
+    if title:
+        return escape(title[:400])
+    return "No summary available."
 
 
-def format_article_message(article: dict[str, Any]) -> str:
-    title = escape(article.get("title") or "Untitled update")
-    source = escape(article.get("source_name") or "Unknown source")
-    published = escape(article.get("pubDate") or "Unknown time")
-    summary = escape((article.get("description") or "No description available.")[:400])
-    link = article.get("link") or ""
+def generate_trade_suggestion(article: dict[str, Any], asset: str) -> str:
     bias = infer_bias_signal(article)
+    if bias:
+        trade = format_trade_lines(bias)
+        if trade:
+            return trade
+
     text = normalize_text(article)
+    score = sum(1 for word in POSITIVE_KEYWORDS if word in text)
+    score -= sum(1 for word in NEGATIVE_KEYWORDS if word in text)
 
-    direction, confidence = "Neutral", "Low"
-    if bias:
-        direction, confidence = compute_confidence(text)
-    trend_icon = "BULLISH" if direction == "Bullish" else "BEARISH" if direction == "Bearish" else "NEUTRAL"
+    if score > 0:
+        direction = "BUY"
+    elif score < 0:
+        direction = "SELL"
+    else:
+        direction = "WATCH"
 
-    lines = [
-        "<b>FOREX SIGNAL</b>",
-        "----------------------------------------",
-        f"<b>Headline:</b> {title}",
-        f"<b>Source:</b> {source} | {published}",
-        f"<b>Summary:</b> {summary}",
-    ]
-
-    if bias:
-        lines.append(f"<b>Market Trend:</b> {trend_icon} on {escape(bias.split()[1])} ({confidence} confidence)")
-
-    if bias:
-        trade_block = format_trade_lines(bias)
-        if trade_block:
-            lines.append(f"\n<b>Trade Setup:</b>\n{trade_block}")
-
-    ai_insight = ai_analyze_news(article)
-    if ai_insight:
-        lines.append(f"\n<b>AI Insight:</b> {ai_insight}")
-
-    if link:
-        lines.append(f"\n<a href='{escape(link)}'>Read More</a>")
-
-    return "\n".join(lines)
+    return f"{direction} {asset} - Monitor for confirmation with proper risk management"
 
 
 def load_newsdata_articles(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -451,9 +501,9 @@ def load_newsapi_articles(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [normalize_newsapi_article(item) for item in articles if isinstance(item, dict)]
 
 
-def fetch_latest_articles() -> list[dict[str, Any]]:
+def fetch_latest_articles(query: str = FOREX_QUERY) -> list[dict[str, Any]]:
     provider = get_active_provider()
-    url = build_newsapi_url() if provider == "newsapi" else build_newsdata_url()
+    url = build_newsapi_url(query) if provider == "newsapi" else build_newsdata_url(query)
     with urlopen(url, timeout=30) as response:
         payload = json.load(response)
 
@@ -477,44 +527,237 @@ def is_recent(article: dict[str, Any], max_age_hours: int = 48) -> bool:
         return True
 
 
-async def send_articles(bot: Bot, chat_id: str, articles: list[dict[str, Any]], seen_keys: set[str]) -> int:
-    sent_count = 0
+def format_market_snapshot_block() -> str | None:
+    try:
+        import indian_market as im
+        indian = im.format_market_snapshot()
+        global_data = im.format_global_snapshot()
+        parts = []
+        if global_data:
+            parts.append(global_data)
+        if indian:
+            parts.append(indian)
+        return "\n\n".join(parts) if parts else None
+    except Exception:
+        return None
+
+
+def format_forex_message(article: dict[str, Any]) -> str:
+    title = escape(article.get("title") or "Untitled update")
+    source = escape(article.get("source_name") or "Unknown source")
+    published = escape(article.get("pubDate") or "Unknown time")
+    link = article.get("link") or ""
+
+    asset = identify_asset(article)
+    summary = ensure_summary(article)
+    trade = generate_trade_suggestion(article, asset)
+
+    bias = infer_bias_signal(article)
+    text = normalize_text(article)
+    direction, confidence = "Neutral", "Low"
+    if bias:
+        direction, confidence = compute_confidence(text)
+    trend_icon = "BULLISH" if direction == "Bullish" else "BEARISH" if direction == "Bearish" else "NEUTRAL"
+
+    lines = [
+        "<b>FOREX SIGNAL</b>",
+        "----------------------------------------",
+        f"<b>Headline:</b> {title}",
+        f"<b>Asset:</b> {asset}",
+        f"<b>Summary:</b> {summary}",
+        "",
+        f"<b>Trade Suggestion:</b>",
+        trade,
+        "",
+        f"<b>Market Trend:</b> {trend_icon} ({confidence} confidence)",
+        f"<b>Source:</b> {source} | {published}",
+    ]
+
+    if bias:
+        asset_name = escape(bias.split()[1])
+        lines[-2] = f"<b>Market Trend:</b> {trend_icon} on {asset_name} ({confidence} confidence)"
+
+    ai_insight = ai_analyze_news(article)
+    if ai_insight:
+        lines.append(f"\n<b>AI Insight:</b> {ai_insight}")
+
+    if link:
+        lines.append(f"\n<a href='{escape(link)}'>Read More</a>")
+
+    return "\n".join(lines)
+
+
+def format_india_message(article: dict[str, Any]) -> str:
+    title = escape(article.get("title") or "Untitled update")
+    source = escape(article.get("source_name") or "Unknown source")
+    published = escape(article.get("pubDate") or "Unknown time")
+    link = article.get("link") or ""
+
+    asset = identify_asset(article)
+    summary = ensure_summary(article)
+    trade = generate_trade_suggestion(article, asset)
+
+    lines = [
+        "<b>INDIA MARKET NEWS</b>",
+        "----------------------------------------",
+        f"<b>Headline:</b> {title}",
+        f"<b>Asset:</b> {asset}",
+        f"<b>Summary:</b> {summary}",
+        "",
+        f"<b>Trade Suggestion:</b>",
+        trade,
+        "",
+        f"<b>Source:</b> {source} | {published}",
+    ]
+
+    if link:
+        lines.append(f"\n<a href='{escape(link)}'>Read More</a>")
+
+    return "\n".join(lines)
+
+
+def format_intraday_message(article: dict[str, Any]) -> str:
+    title = escape(article.get("title") or "Untitled update")
+    source = escape(article.get("source_name") or "Unknown source")
+    published = escape(article.get("pubDate") or "Unknown time")
+    link = article.get("link") or ""
+
+    asset = identify_asset(article)
+    summary = ensure_summary(article)
+    trade = generate_trade_suggestion(article, asset)
+
+    lines = [
+        "<b>INTRADAY STOCK ALERT</b>",
+        "----------------------------------------",
+        f"<b>Headline:</b> {title}",
+        f"<b>Stock:</b> {asset}",
+        f"<b>Summary:</b> {summary}",
+        "",
+        f"<b>Trade Suggestion:</b>",
+        trade,
+        "",
+        f"<b>Source:</b> {source} | {published}",
+    ]
+
+    if link:
+        lines.append(f"\n<a href='{escape(link)}'>Read More</a>")
+
+    return "\n".join(lines)
+
+
+async def send_category_article(
+    bot: Bot,
+    chat_id: str,
+    articles: list[dict[str, Any]],
+    seen_keys: set[str],
+    category_prefix: str,
+    format_func: Any,
+) -> int:
     for article in articles:
         key = article_key(article)
-        if not key or key in seen_keys or not is_forex_relevant(article) or not is_recent(article):
+        if not key:
+            continue
+        full_key = f"{category_prefix}:{key}"
+        if full_key in seen_keys:
+            continue
+        if not is_recent(article):
+            continue
+
+        text = format_func(article)
+        if not text:
             continue
 
         await bot.send_message(
             chat_id=chat_id,
-            text=format_article_message(article),
+            text=text,
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
-        seen_keys.add(key)
-        sent_count += 1
+        seen_keys.add(full_key)
+        save_seen_keys(seen_keys)
+        return 1
+    return 0
 
-        if sent_count >= MAX_ARTICLES_PER_CYCLE:
-            break
 
-    if sent_count:
-        market_block = format_market_snapshot_block()
-        if market_block:
-            try:
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"<b>MARKET SUMMARY</b>\n----------------------------------------\n{market_block}",
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
+async def send_options_suggestion(bot: Bot, chat_id: str, seen_keys: set[str]) -> int:
+    import indian_market as im
 
-    return sent_count
+    nifty_suggestion = im.format_nifty_options_suggestion()
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+
+    sent = 0
+
+    if nifty_suggestion:
+        key = f"option:nifty_{today}"
+        if key not in seen_keys:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=nifty_suggestion,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            seen_keys.add(key)
+            save_seen_keys(seen_keys)
+            sent += 1
+
+    sensex_suggestion = im.format_sensex_options_suggestion()
+    if sensex_suggestion:
+        key = f"option:sensex_{today}"
+        if key not in seen_keys:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=sensex_suggestion,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            seen_keys.add(key)
+            save_seen_keys(seen_keys)
+            sent += 1
+
+    return sent
 
 
 async def run_worker_cycle(bot: Bot, chat_id: str, seen_keys: set[str]) -> int:
-    articles = fetch_latest_articles()
-    return await send_articles(bot, chat_id, articles, seen_keys)
+    total_sent = 0
+
+    forex_articles = fetch_latest_articles(FOREX_QUERY)
+    total_sent += await send_category_article(
+        bot, chat_id, forex_articles, seen_keys,
+        "forex", format_forex_message,
+    )
+
+    india_articles = fetch_latest_articles(INDIA_MARKET_QUERY)
+    total_sent += await send_category_article(
+        bot, chat_id, india_articles, seen_keys,
+        "india", format_india_message,
+    )
+
+    intraday_articles = fetch_latest_articles(INTRADAY_STOCK_QUERY)
+    total_sent += await send_category_article(
+        bot, chat_id, intraday_articles, seen_keys,
+        "intraday", format_intraday_message,
+    )
+
+    total_sent += await send_options_suggestion(bot, chat_id, seen_keys)
+
+    if total_sent:
+        market_block = format_market_snapshot_block()
+        if market_block:
+            hour_key = f"market_summary:{datetime.now(timezone.utc).strftime('%Y%m%d_%H')}"
+            if hour_key not in seen_keys:
+                try:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"<b>MARKET SUMMARY</b>\n----------------------------------------\n{market_block}",
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    seen_keys.add(hour_key)
+                    save_seen_keys(seen_keys)
+                except Exception:
+                    pass
+
+    return total_sent
 
 
 def validate_config() -> list[str]:
@@ -536,16 +779,17 @@ def validate_config() -> list[str]:
 
 async def worker_loop() -> None:
     bot = Bot(BOT_TOKEN)
-    seen_keys: set[str] = set()
+    seen_keys = load_seen_keys()
     provider = get_active_provider()
 
-    print("LiveForexSignalsAI worker started.")
+    print("ForexSignalAI worker started.")
     print(f"Polling {provider} every {FETCH_INTERVAL_SECONDS} seconds.")
+    print(f"Loaded {len(seen_keys)} previously sent article keys.")
 
     while True:
         try:
             sent_count = await run_worker_cycle(bot, TELEGRAM_CHAT_ID, seen_keys)
-            print(f"Worker cycle complete. Sent {sent_count} article(s).")
+            print(f"Worker cycle complete. Sent {sent_count} message(s).")
         except Exception as exc:
             print(f"[ERROR] Worker cycle failed: {exc}")
 
@@ -553,7 +797,7 @@ async def worker_loop() -> None:
 
 
 def main() -> int:
-    print("Launching LiveForexSignalsAI Bot Engine...")
+    print("Launching ForexSignalAI Bot Engine...")
     missing = validate_config()
     if missing:
         print(f"[ERROR] Missing required environment variables: {', '.join(missing)}")

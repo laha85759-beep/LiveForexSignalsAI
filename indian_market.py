@@ -203,9 +203,15 @@ def format_global_snapshot() -> str | None:
     return "\n\n".join(parts) if parts else None
 
 
-def format_nifty_options() -> str | None:
+def _build_options_suggestion(
+    ticker: str,
+    index_name: str,
+    strike_round: int = 50,
+    range_width: int = 200,
+) -> str | None:
+    """Build an options trade suggestion for a given index ticker."""
     try:
-        tk = yf.Ticker(NIFTY_TICKER)
+        tk = yf.Ticker(ticker)
         hist = tk.history(period="1d")
         if hist.empty:
             return None
@@ -216,17 +222,85 @@ def format_nifty_options() -> str | None:
         chain = tk.option_chain(exps[0])
         calls = chain.calls
         puts = chain.puts
-        atm_strike = round(spot / 50) * 50
-        near_calls = calls[calls["strike"].between(atm_strike - 150, atm_strike + 150)].head(3)
-        near_puts = puts[puts["strike"].between(atm_strike - 150, atm_strike + 150)].head(3)
 
-        lines = [f"<b>Nifty Options ({exps[0][:10]}):</b> Spot: {spot:.2f}"]
-        lines.append(f"\n<b>Calls:</b>")
-        for _, row in near_calls.iterrows():
-            lines.append(f"  {int(row['strike'])} CE: {row['lastPrice']:.2f} | OI: {int(row['openInterest'])}")
-        lines.append(f"\n<b>Puts:</b>")
-        for _, row in near_puts.iterrows():
-            lines.append(f"  {int(row['strike'])} PE: {row['lastPrice']:.2f} | OI: {int(row['openInterest'])}")
+        atm_strike = round(spot / strike_round) * strike_round
+
+        atm_calls = calls[calls["strike"].between(atm_strike - range_width, atm_strike + range_width)]
+        atm_puts = puts[puts["strike"].between(atm_strike - range_width, atm_strike + range_width)]
+
+        if atm_calls.empty and atm_puts.empty:
+            return None
+
+        call_oi = atm_calls["openInterest"].sum() if not atm_calls.empty else 0
+        put_oi = atm_puts["openInterest"].sum() if not atm_puts.empty else 0
+        pcr = put_oi / call_oi if call_oi > 0 else 0
+
+        if pcr > 1.3:
+            suggestion = "Bearish sentiment (high PCR). Consider buying PUTS for hedging or downside protection."
+            direction = "BEARISH"
+        elif pcr < 0.7:
+            suggestion = "Bullish sentiment (low PCR). Consider buying CALLS for upside potential."
+            direction = "BULLISH"
+        else:
+            max_oi_strike = None
+            max_oi = 0
+            for df in [atm_calls, atm_puts]:
+                if not df.empty:
+                    idx = df["openInterest"].idxmax()
+                    row = df.loc[idx]
+                    if row["openInterest"] > max_oi:
+                        max_oi = row["openInterest"]
+                        max_oi_strike = int(row["strike"])
+            direction = "NEUTRAL"
+            if max_oi_strike:
+                suggestion = (
+                    f"Market range-bound. Max OI at {max_oi_strike}. "
+                    "Consider Iron Condor or wait for breakout above/below this level."
+                )
+            else:
+                suggestion = "Market range-bound. Wait for clear breakout direction."
+
+        expiry_label = exps[0][:10]
+
+        lines = [
+            f"<b>{index_name} OPTIONS SUGGESTION</b>",
+            "----------------------------------------",
+            f"<b>Spot:</b> {spot:.2f}",
+            f"<b>ATM Strike:</b> {atm_strike}",
+            f"<b>Expiry:</b> {expiry_label}",
+            f"<b>PCR (Put-Call Ratio):</b> {pcr:.2f}",
+            f"<b>Outlook:</b> {direction}",
+            "",
+        ]
+
+        if not atm_calls.empty:
+            lines.append("<b>Top Call OI:</b>")
+            top_calls = atm_calls.nlargest(3, "openInterest")
+            for _, row in top_calls.iterrows():
+                lines.append(
+                    f"  {int(row['strike'])} CE: {row['lastPrice']:.2f} | "
+                    f"OI: {int(row['openInterest'])}"
+                )
+
+        if not atm_puts.empty:
+            lines.append(f"\n<b>Top Put OI:</b>")
+            top_puts = atm_puts.nlargest(3, "openInterest")
+            for _, row in top_puts.iterrows():
+                lines.append(
+                    f"  {int(row['strike'])} PE: {row['lastPrice']:.2f} | "
+                    f"OI: {int(row['openInterest'])}"
+                )
+
+        lines.append(f"\n<b>Trade Suggestion:</b> {suggestion}")
+
         return "\n".join(lines)
     except Exception:
         return None
+
+
+def format_nifty_options_suggestion() -> str | None:
+    return _build_options_suggestion(NIFTY_TICKER, "Nifty", strike_round=50, range_width=200)
+
+
+def format_sensex_options_suggestion() -> str | None:
+    return _build_options_suggestion(SENSEX_TICKER, "Sensex", strike_round=100, range_width=500)
