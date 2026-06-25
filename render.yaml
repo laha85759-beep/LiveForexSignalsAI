@@ -21,5 +21,9 @@ services:
         value: 'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR (pound AND boe) OR (yen AND boj) OR (gold AND fed)'
       - key: INDIA_MARKET_QUERY
         value: '(sensex OR nifty OR "indian market" OR "india stock" OR "bse" OR "nse" OR "rbi" OR "rupee") AND (india OR mumbai)'
+      - key: GROQ_API_KEY
+        sync: false
       - key: INTRADAY_STOCK_QUERY
         value: '(reliance OR tcs OR hdfc OR infosys OR icici OR "hindustan unilever" OR sbi OR bharti OR "stock market today") AND (india OR "bse" OR "nse")'
+      - key: MASSIVE_API_KEY
+        sync: false

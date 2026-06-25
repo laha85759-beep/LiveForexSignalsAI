@@ -1,0 +1,134 @@
+[
+  {
+    "date": "2026-06-25",
+    "time": "14:00 UTC",
+    "pair": "EUR/USD",
+    "direction": "BUY",
+    "entry": 1.1351,
+    "tp1": 1.1381,
+    "tp2": 1.1401,
+    "sl": 1.1331,
+    "source": "forex"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:00 UTC",
+    "pair": "EUR/USD",
+    "direction": "Bullish",
+    "entry": 1.14,
+    "tp1": 1.14,
+    "tp2": 1.14,
+    "sl": 1.13,
+    "source": "india"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:00 UTC",
+    "pair": "EUR/USD",
+    "direction": "Bullish",
+    "entry": 1.14,
+    "tp1": 1.14,
+    "tp2": 1.14,
+    "sl": 1.13,
+    "source": "intraday"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:01 UTC",
+    "pair": "EUR/USD",
+    "direction": "SELL",
+    "entry": 1.1351,
+    "tp1": 1.1321,
+    "tp2": 1.1301,
+    "sl": 1.1371,
+    "source": "forex"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:01 UTC",
+    "pair": "EUR/USD",
+    "direction": "SELL",
+    "entry": 1.1351,
+    "tp1": 1.1321,
+    "tp2": 1.1301,
+    "sl": 1.1371,
+    "source": "forex"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:01 UTC",
+    "pair": "EUR/USD",
+    "direction": "SELL",
+    "entry": 1.1351,
+    "tp1": 1.1321,
+    "tp2": 1.1301,
+    "sl": 1.1371,
+    "source": "forex"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:02 UTC",
+    "pair": "EUR/USD",
+    "direction": "SELL",
+    "entry": 1.1351,
+    "tp1": 1.1321,
+    "tp2": 1.1301,
+    "sl": 1.1371,
+    "source": "forex"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:02 UTC",
+    "pair": "USD/INR",
+    "direction": "Neutral",
+    "entry": 94.65,
+    "tp1": 94.35,
+    "tp2": 94.15,
+    "sl": 94.85,
+    "source": "india"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:02 UTC",
+    "pair": "EUR/USD",
+    "direction": "SELL",
+    "entry": 1.1351,
+    "tp1": 1.1321,
+    "tp2": 1.1301,
+    "sl": 1.1371,
+    "source": "news"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:02 UTC",
+    "pair": "USD/JPY",
+    "direction": "BUY",
+    "entry": 161.74,
+    "tp1": 162.04,
+    "tp2": 162.24,
+    "sl": 161.54,
+    "source": "news"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:02 UTC",
+    "pair": "GBP/USD",
+    "direction": "SELL",
+    "entry": 1.3158,
+    "tp1": 1.3128,
+    "tp2": 1.3108,
+    "sl": 1.3178,
+    "source": "news"
+  },
+  {
+    "date": "2026-06-25",
+    "time": "14:02 UTC",
+    "pair": "USD/CAD",
+    "direction": "BUY",
+    "entry": 1.42,
+    "tp1": 1.423,
+    "tp2": 1.425,
+    "sl": 1.418,
+    "source": "news"
+  }
+]
