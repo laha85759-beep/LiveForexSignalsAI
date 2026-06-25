@@ -13,16 +13,19 @@ from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 import massive_data
+import realtime_alert
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN", "PLACEHOLDER_TOKEN_REVOKED").strip()
-TELEGRAM_CHAT_ID = "6207722743"
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY", "").strip()
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "").strip()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 MASSIVE_API_KEY = os.getenv("MASSIVE_API_KEY", "").strip()
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 NEWSDATA_API_URL = "https://newsdata.io/api/1/latest"
 NEWSAPI_URL = "https://newsapi.org/v2/everything"
+FINNHUB_BASE = "https://finnhub.io/api/v1"
 NEWS_PROVIDER = os.getenv("NEWS_PROVIDER", "auto").strip().lower()
 FETCH_INTERVAL_SECONDS = int(os.getenv("FETCH_INTERVAL_SECONDS", "900"))
 HIGH_IMPACT_CHECK_INTERVAL = int(os.getenv("HIGH_IMPACT_CHECK_INTERVAL", "60"))
@@ -37,7 +40,9 @@ FOREX_QUERY = os.getenv(
     'forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR '
     '(pound AND boe) OR (yen AND boj) OR (gold AND fed) OR (rupee AND rbi) OR '
     '(bitcoin OR btc OR ethereum OR eth OR crypto OR solana OR ripple OR cardano OR dogecoin) OR '
-    '(crude oil OR brent OR wti) OR (silver) OR (nasdaq OR "dow jones" OR "s&p 500")',
+    '(crude oil OR brent OR wti) OR (silver) OR (nasdaq OR "dow jones" OR "s&p 500") OR '
+    '(apple OR microsoft OR amazon OR nvidia OR meta OR tesla OR google OR netflix) OR '
+    '(reliance OR tcs OR hdfc OR infosys OR icici OR sbi OR bharti OR zomato OR adani)',
 )
 
 INDIA_MARKET_QUERY = os.getenv(
@@ -49,7 +54,10 @@ INDIA_MARKET_QUERY = os.getenv(
 INTRADAY_STOCK_QUERY = os.getenv(
     "INTRADAY_STOCK_QUERY",
     '(reliance OR tcs OR hdfc OR infosys OR icici OR "hindustan unilever" OR sbi OR '
-    'bharti OR "intraday" OR "stock market today" OR "opening bell" OR "closing bell") '
+    'bharti OR "intraday" OR "stock market today" OR "opening bell" OR "closing bell" OR '
+    'zomato OR adani OR "tata motors" OR "bajaj finance" OR wipro OR itc OR "asian paints" OR '
+    'ntpc OR ongc OR "power grid" OR "ultratech cement" OR "tata steel" OR jsw OR hindalco OR '
+    'walmart OR jpmorgan OR visa OR boeing OR disney OR netflix OR salesforce OR paypal OR uber) '
     'AND (india OR "bse" OR "nse" OR "bombay stock exchange")',
 )
 
@@ -83,14 +91,71 @@ FOREX_TERMS = {
     "inflation",
     "cpi",
     "nonfarm payrolls",
+    "aud",
+    "aussie",
+    "nzd",
+    "kiwi",
+    "chf",
+    "swiss franc",
+    "cad",
+    "loonie",
+    "sek",
+    "nok",
+    "sgd",
+    "hkd",
+    "cny",
+    "yuan",
+    "mxn",
+    "peso",
+    "zar",
+    "rand",
+    "try",
+    "lira",
     "inr",
     "rupee",
     "rbi",
     "sensex",
     "nifty",
+    "bank nifty",
     "india market",
     "bse",
     "nse",
+    "sp500",
+    "ftse",
+    "dax",
+    "nikkei",
+    "hang seng",
+    "asx 200",
+    "s&p 500",
+    "apple",
+    "microsoft",
+    "amazon",
+    "nvidia",
+    "tesla",
+    "meta",
+    "google",
+    "netflix",
+    "adobe",
+    "salesforce",
+    "intel",
+    "amd",
+    "paypal",
+    "uber",
+    "nike",
+    "boeing",
+    "disney",
+    "walmart",
+    "jpmorgan",
+    "visa",
+    "reliance",
+    "tcs",
+    "hdfc",
+    "infosys",
+    "icici",
+    "sbi",
+    "bharti",
+    "zomato",
+    "adani",
     "bitcoin",
     "btc",
     "ethereum",
@@ -133,10 +198,6 @@ FOREX_TERMS = {
 }
 
 CURRENCY_HINTS = {
-    "USD": ("usd", "dollar", "fed", "treasury"),
-    "EUR": ("eur", "euro", "ecb"),
-    "GBP": ("gbp", "pound", "boe", "bank of england"),
-    "JPY": ("jpy", "yen", "boj", "bank of japan"),
     "XAU": ("xau", "gold", "bullion"),
     "XAG": ("xag", "silver"),
     "OIL": ("crude", "oil", "brent", "wti"),
@@ -144,17 +205,48 @@ CURRENCY_HINTS = {
     "ETH": ("ethereum", "eth"),
     "SOL": ("solana", "sol"),
     "XRP": ("ripple", "xrp"),
-    "ADA": ("cardano", "ada"),
+    "ADA": ("cardano",),
     "DOGE": ("dogecoin", "doge"),
     "DOT": ("polkadot", "dot"),
     "AVAX": ("avalanche", "avax"),
     "LINK": ("chainlink", "link"),
     "LTC": ("litecoin", "ltc"),
-    "INR": ("inr", "rupee", "rbi", "india", "sensex", "nifty"),
-    "US30": ("dow jones", "us30", "djia"),
-    "US100": ("nasdaq", "us100", "ixic"),
+    "AUD": ("aud", "australian dollar", "aussie", "reserve bank of australia", "rba"),
+    "NZD": ("nzd", "new zealand dollar", "kiwi", "reserve bank of new zealand", "rbnz"),
+    "CHF": ("chf", "swiss franc", "swiss national bank", "snb"),
+    "CAD": ("cad", "canadian dollar", "loonie", "bank of canada", "boc"),
+    "SEK": ("sek", "swedish krona", "riksbank", "swedish crown"),
+    "NOK": ("nok", "norwegian krone", "norges bank"),
+    "SGD": ("sgd", "singapore dollar", "monetary authority of singapore"),
+    "HKD": ("hkd", "hong kong dollar", "hong kong monetary authority"),
+    "CNY": ("cny", "yuan", "renminbi", "chinese yuan", "pboc", "people's bank of china"),
+    "MXN": ("mxn", "mexican peso", "banxico", "bank of mexico"),
+    "ZAR": ("zar", "south african rand", "sarb", "reserve bank of south africa"),
+    "TRY": ("try", "turkish lira", "turkish lira", "central bank of turkey"),
+    "JPY": ("jpy", "yen", "boj", "bank of japan"),
+    "GBP": ("gbp", "pound", "boe", "bank of england"),
+    "EUR": ("eur", "euro", "ecb"),
+    "USD": ("usd", "dollar", "fed", "treasury"),
     "NIFTY": ("nifty", "nifty 50", "nse"),
     "SENSEX": ("sensex", "bse", "bombay stock exchange"),
+    "BANKNIFTY": ("bank nifty", "banknifty"),
+    "FINNIFTY": ("fin nifty", "finnifty"),
+    "MIDCAPNIFTY": ("midcap nifty", "midcapnifty", "nifty midcap"),
+    "VIXNIFTY": ("india vix", "vix", "fear index"),
+    "INR": ("inr", "rupee", "rbi", "india"),
+    "US30": ("dow jones", "us30", "djia"),
+    "US100": ("nasdaq", "us100", "ixic"),
+    "SP500": ("s&p 500", "sp500", "spx"),
+    "UK100": ("ftse 100", "ftse", "uk100"),
+    "GER40": ("dax", "ger40", "dax 40"),
+    "JPN225": ("nikkei", "jpn225", "nikkei 225", "n225"),
+    "HK50": ("hang seng", "hk50", "hsi"),
+    "AUS200": ("asx 200", "aus200", "s&p/asx 200"),
+    "ADANIENT": ("adani enterprises", "adanient", "adani group"),
+    "ADANIPORTS": ("adani ports", "adaniports"),
+    "ADANIGREEN": ("adani green", "adanigreen"),
+    "ADANITRANS": ("adani transmission", "adanitrans"),
+    "ADANIPOWER": ("adani power", "adanipower"),
     "RELIANCE": ("reliance", "ril"),
     "TCS": ("tcs", "tata consultancy"),
     "HDFCBANK": ("hdfc bank", "hdfcbank"),
@@ -178,6 +270,90 @@ CURRENCY_HINTS = {
     "ONGC": ("ongc",),
     "POWERGRID": ("power grid", "powergrid"),
     "ULTRACEMCO": ("ultratech", "ultratech cement", "ultracemco"),
+    "TATASTEEL": ("tata steel", "tatasteel"),
+    "JSWSTEEL": ("jsw steel", "jswsteel"),
+    "HINDALCO": ("hindalco", "hindalco industries"),
+    "TECHM": ("tech mahindra", "techm"),
+    "COALINDIA": ("coal india", "coalindia"),
+    "HINDUNILVR": ("hindustan unilever", "hul", "hindunilvr"),
+    "BRITANNIA": ("britannia", "britannia industries"),
+    "NESTLEIND": ("nestle india", "nestleind"),
+    "M&M": ("mahindra", "m&m", "mahindra & mahindra"),
+    "EICHERMOT": ("eicher motors", "eichermot", "royal enfield"),
+    "HEROMOTOCO": ("hero motocorp", "heromotoco", "hero honda"),
+    "BAJAJ-AUTO": ("bajaj auto", "bajajauto"),
+    "TATACONSUM": ("tata consumer", "tataconsumer"),
+    "DABUR": ("dabur",),
+    "MARICO": ("marico",),
+    "HDFC": ("hdfc", "hdfc ltd"),
+    "ICICIPRUDI": ("icici prudential", "iciciprudential"),
+    "HDFCLIFE": ("hdfc life", "hdFclife"),
+    "SBILIFE": ("sbi life", "sbilife"),
+    "TRENT": ("trent", "westside", "zudio"),
+    "AVENUE": ("avenue supermarts", "dmart", "avenue"),
+    "PIDILITIND": ("pidilite", "pidilitind", "fevicol"),
+    "HAVELLS": ("havells", "havells india"),
+    "SIEMENS": ("siemens india", "siemens"),
+    "BEL": ("bharat electronics", "bel", "bharat electronics limited"),
+    "BHEL": ("bhel", "bharat heavy electricals"),
+    "HAL": ("hal", "hindustan aeronautics", "hindustan aeronautics limited"),
+    "IRFC": ("irfc", "indian railway finance"),
+    "IREDA": ("ireda", "indian renewable energy development"),
+    "SUZLON": ("suzlon", "suzlon energy"),
+    "HINDZINC": ("hindustan zinc", "hindzinc"),
+    "VEDL": ("vedanta", "vedl"),
+    "IOC": ("indian oil", "ioc", "indianoil"),
+    "BPCL": ("bpcl", "bharat petroleum"),
+    "GAIL": ("gail", "gail india"),
+    "NATIONALUM": ("national aluminium", "nationalum", "nalco"),
+    "ZOMATO": ("zomato", "blinkit"),
+    "SWIGGY": ("swiggy",),
+    "PAYTM": ("paytm", "one97 communications"),
+    "POLICYBZR": ("policybazaar", "policybzr", "pb fintech"),
+    "NYKAA": ("nykaa", "fsn ecommerce"),
+    "HDFCAMC": ("hdfc asset management", "hdfcamc"),
+    "GRASIM": ("grasim", "grasim industries"),
+    "DIVISLAB": ("divi's laboratories", "divislab", "divi"),
+    "CIPLA": ("cipla",),
+    "DRREDDY": ("dr reddy", "drreddy", "dr. reddy"),
+    "APOLLOHOSP": ("apollo hospitals", "apollohosp"),
+    "AUROPHARMA": ("aurobinido pharma", "auropharma"),
+    "TVSMOTOR": ("tvs motor", "tvsmotor"),
+    "AAPL": ("apple", "aapl", "iphone"),
+    "MSFT": ("microsoft", "msft", "windows", "azure"),
+    "GOOGL": ("google", "alphabet", "googl", "goog"),
+    "AMZN": ("amazon", "amzn", "aws"),
+    "NVDA": ("nvidia", "nvda", "geforce"),
+    "META": ("meta", "facebook", "meta platforms"),
+    "TSLA": ("tesla", "tsla", "elon"),
+    "JPM": ("jpmorgan", "jp morgan", "jpm", "chase"),
+    "V": ("visa", "v"),
+    "WMT": ("walmart", "wmt"),
+    "JNJ": ("johnson & johnson", "jnj"),
+    "PG": ("procter & gamble", "pg"),
+    "XOM": ("exxon", "xom", "exxon mobil"),
+    "UNH": ("unitedhealth", "unh", "united health"),
+    "HD": ("home depot", "hd"),
+    "BAC": ("bank of america", "bac"),
+    "DIS": ("disney", "dis"),
+    "NFLX": ("netflix", "nflx"),
+    "ADBE": ("adobe", "adbe"),
+    "CRM": ("salesforce", "crm"),
+    "INTC": ("intel", "intc"),
+    "AMD": ("amd", "advanced micro devices"),
+    "PYPL": ("paypal", "pypl"),
+    "UBER": ("uber", "uber technologies"),
+    "NKE": ("nike", "nke"),
+    "BA": ("boeing", "ba"),
+    "COIN": ("coinbase", "coin"),
+    "SNAP": ("snapchat", "snap"),
+    "SQ": ("block", "square", "sq"),
+    "PLTR": ("palantir", "pltr"),
+    "RBLX": ("roblox", "rblx"),
+    "MCD": ("mcdonald", "mcd", "mcdonald's"),
+    "SBUX": ("starbucks", "sbux"),
+    "NIO": ("nio",),
+    "RIVN": ("rivian", "rivn"),
 }
 
 TRADE_PAIRS = {
@@ -198,11 +374,143 @@ TRADE_PAIRS = {
     "AVAX": [("AVAX/USD", 1, 0.01)],
     "LINK": [("LINK/USD", 1, 0.01)],
     "LTC": [("LTC/USD", 1, 0.01)],
+    "AUD": [("AUD/USD", -1, 0.0001), ("NZD/USD", -1, 0.0001)],
+    "NZD": [("NZD/USD", -1, 0.0001), ("AUD/USD", -1, 0.0001)],
+    "CHF": [("USD/CHF", 1, 0.0001)],
+    "CAD": [("USD/CAD", 1, 0.0001)],
+    "MXN": [("USD/MXN", 1, 0.001)],
+    "ZAR": [("USD/ZAR", 1, 0.001)],
+    "TRY": [("USD/TRY", 1, 0.001)],
+    "SGD": [("USD/SGD", 1, 0.001)],
+    "HKD": [("USD/HKD", 1, 0.001)],
+    "CNY": [("USD/CNY", 1, 0.001)],
     "INR": [("USD/INR", 1, 0.01)],
     "US30": [("US30", 1, 1.0)],
     "US100": [("US100", 1, 1.0)],
+    "SP500": [("SP500", 1, 1.0)],
+    "UK100": [("UK100", 1, 1.0)],
+    "GER40": [("GER40", 1, 1.0)],
+    "JPN225": [("JPN225", 1, 1.0)],
+    "HK50": [("HK50", 1, 1.0)],
+    "AUS200": [("AUS200", 1, 1.0)],
     "NIFTY": [("NIFTY", 1, 1.0)],
     "SENSEX": [("SENSEX", 1, 1.0)],
+    "BANKNIFTY": [("BANKNIFTY", 1, 1.0)],
+    "FINNIFTY": [("FINNIFTY", 1, 1.0)],
+    "MIDCAPNIFTY": [("MIDCAPNIFTY", 1, 1.0)],
+    "VIXNIFTY": [("INDIAVIX", 1, 0.01)],
+    "AAPL": [("AAPL", 1, 0.5)],
+    "MSFT": [("MSFT", 1, 0.5)],
+    "GOOGL": [("GOOGL", 1, 0.5)],
+    "AMZN": [("AMZN", 1, 1.0)],
+    "NVDA": [("NVDA", 1, 1.0)],
+    "META": [("META", 1, 0.5)],
+    "TSLA": [("TSLA", 1, 1.0)],
+    "JPM": [("JPM", 1, 0.5)],
+    "V": [("V", 1, 0.5)],
+    "WMT": [("WMT", 1, 0.2)],
+    "JNJ": [("JNJ", 1, 0.5)],
+    "PG": [("PG", 1, 0.5)],
+    "XOM": [("XOM", 1, 0.5)],
+    "UNH": [("UNH", 1, 1.0)],
+    "HD": [("HD", 1, 0.5)],
+    "BAC": [("BAC", 1, 0.1)],
+    "DIS": [("DIS", 1, 0.2)],
+    "NFLX": [("NFLX", 1, 1.0)],
+    "ADBE": [("ADBE", 1, 1.0)],
+    "CRM": [("CRM", 1, 0.5)],
+    "INTC": [("INTC", 1, 0.1)],
+    "AMD": [("AMD", 1, 0.2)],
+    "PYPL": [("PYPL", 1, 0.2)],
+    "UBER": [("UBER", 1, 0.2)],
+    "NKE": [("NKE", 1, 0.2)],
+    "BA": [("BA", 1, 0.5)],
+    "COIN": [("COIN", 1, 1.0)],
+    "SNAP": [("SNAP", 1, 0.05)],
+    "SQ": [("SQ", 1, 0.2)],
+    "PLTR": [("PLTR", 1, 0.1)],
+    "RBLX": [("RBLX", 1, 0.2)],
+    "MCD": [("MCD", 1, 0.5)],
+    "SBUX": [("SBUX", 1, 0.2)],
+    "NIO": [("NIO", 1, 0.05)],
+    "RIVN": [("RIVN", 1, 0.05)],
+    "RELIANCE": [("RELIANCE", 1, 1.0)],
+    "TCS": [("TCS", 1, 1.0)],
+    "HDFCBANK": [("HDFCBANK", 1, 0.5)],
+    "INFY": [("INFY", 1, 0.5)],
+    "ICICIBANK": [("ICICIBANK", 1, 0.5)],
+    "SBIN": [("SBIN", 1, 0.5)],
+    "BHARTI": [("BHARTI", 1, 0.5)],
+    "WIPRO": [("WIPRO", 1, 0.2)],
+    "ITC": [("ITC", 1, 0.2)],
+    "LT": [("LT", 1, 1.0)],
+    "AXISBANK": [("AXISBANK", 1, 0.5)],
+    "KOTAKBANK": [("KOTAKBANK", 1, 0.5)],
+    "MARUTI": [("MARUTI", 1, 1.0)],
+    "TATAMOTORS": [("TATAMOTORS", 1, 0.5)],
+    "ASIANPAINT": [("ASIANPAINT", 1, 1.0)],
+    "HCLTECH": [("HCLTECH", 1, 0.5)],
+    "SUNPHARMA": [("SUNPHARMA", 1, 0.5)],
+    "BAJFINANCE": [("BAJFINANCE", 1, 1.0)],
+    "TITAN": [("TITAN", 1, 1.0)],
+    "NTPC": [("NTPC", 1, 0.5)],
+    "ONGC": [("ONGC", 1, 0.2)],
+    "POWERGRID": [("POWERGRID", 1, 0.5)],
+    "ULTRACEMCO": [("ULTRACEMCO", 1, 1.0)],
+    "TATASTEEL": [("TATASTEEL", 1, 0.5)],
+    "JSWSTEEL": [("JSWSTEEL", 1, 0.5)],
+    "HINDALCO": [("HINDALCO", 1, 0.5)],
+    "TECHM": [("TECHM", 1, 0.5)],
+    "COALINDIA": [("COALINDIA", 1, 0.2)],
+    "HINDUNILVR": [("HINDUNILVR", 1, 1.0)],
+    "BRITANNIA": [("BRITANNIA", 1, 1.0)],
+    "NESTLEIND": [("NESTLEIND", 1, 2.0)],
+    "M&M": [("M&M", 1, 0.5)],
+    "EICHERMOT": [("EICHERMOT", 1, 1.0)],
+    "HEROMOTOCO": [("HEROMOTOCO", 1, 0.5)],
+    "BAJAJ-AUTO": [("BAJAJ_AUTO", 1, 1.0)],
+    "TATACONSUM": [("TATACONSUM", 1, 0.5)],
+    "DABUR": [("DABUR", 1, 0.5)],
+    "MARICO": [("MARICO", 1, 0.5)],
+    "HDFC": [("HDFC", 1, 0.5)],
+    "ICICIPRUDI": [("ICICIPRUDI", 1, 0.5)],
+    "HDFCLIFE": [("HDFCLIFE", 1, 0.2)],
+    "SBILIFE": [("SBILIFE", 1, 0.5)],
+    "TRENT": [("TRENT", 1, 1.0)],
+    "AVENUE": [("AVENUE", 1, 1.0)],
+    "PIDILITIND": [("PIDILITIND", 1, 0.5)],
+    "HAVELLS": [("HAVELLS", 1, 0.5)],
+    "SIEMENS": [("SIEMENS", 1, 1.0)],
+    "BEL": [("BEL", 1, 0.5)],
+    "BHEL": [("BHEL", 1, 0.1)],
+    "HAL": [("HAL", 1, 1.0)],
+    "IRFC": [("IRFC", 1, 0.1)],
+    "IREDA": [("IREDA", 1, 0.1)],
+    "SUZLON": [("SUZLON", 1, 0.05)],
+    "ADANIENT": [("ADANIENT", 1, 1.0)],
+    "ADANIPORTS": [("ADANIPORTS", 1, 0.5)],
+    "ADANIGREEN": [("ADANIGREEN", 1, 0.5)],
+    "ADANITRANS": [("ADANITRANS", 1, 0.5)],
+    "ADANIPOWER": [("ADANIPOWER", 1, 0.2)],
+    "HINDZINC": [("HINDZINC", 1, 0.2)],
+    "VEDL": [("VEDL", 1, 0.2)],
+    "IOC": [("IOC", 1, 0.2)],
+    "BPCL": [("BPCL", 1, 0.2)],
+    "GAIL": [("GAIL", 1, 0.2)],
+    "NATIONALUM": [("NATIONALUM", 1, 0.2)],
+    "ZOMATO": [("ZOMATO", 1, 0.1)],
+    "SWIGGY": [("SWIGGY", 1, 0.1)],
+    "PAYTM": [("PAYTM", 1, 0.1)],
+    "POLICYBZR": [("POLICYBZR", 1, 0.1)],
+    "NYKAA": [("NYKAA", 1, 0.2)],
+    "HDFCAMC": [("HDFCAMC", 1, 0.5)],
+    "GRASIM": [("GRASIM", 1, 1.0)],
+    "DIVISLAB": [("DIVISLAB", 1, 1.0)],
+    "CIPLA": [("CIPLA", 1, 0.5)],
+    "DRREDDY": [("DRREDDY", 1, 1.0)],
+    "APOLLOHOSP": [("APOLLOHOSP", 1, 1.0)],
+    "AUROPHARMA": [("AUROPHARMA", 1, 0.2)],
+    "TVSMOTOR": [("TVSMOTOR", 1, 0.5)],
 }
 
 INSTRUMENT_NAMES: dict[str, str] = {
@@ -225,11 +533,143 @@ INSTRUMENT_NAMES: dict[str, str] = {
     "AVAX/USD": "Avalanche vs US Dollar",
     "LINK/USD": "Chainlink vs US Dollar",
     "LTC/USD": "Litecoin vs US Dollar",
+    "AUD/USD": "Australian Dollar vs US Dollar",
+    "NZD/USD": "New Zealand Dollar vs US Dollar",
+    "USD/CHF": "US Dollar vs Swiss Franc",
+    "USD/CAD": "US Dollar vs Canadian Dollar",
+    "USD/MXN": "US Dollar vs Mexican Peso",
+    "USD/ZAR": "US Dollar vs South African Rand",
+    "USD/TRY": "US Dollar vs Turkish Lira",
+    "USD/SGD": "US Dollar vs Singapore Dollar",
+    "USD/HKD": "US Dollar vs Hong Kong Dollar",
+    "USD/CNY": "US Dollar vs Chinese Yuan",
     "USD/INR": "US Dollar vs Indian Rupee",
     "US30": "Dow Jones Industrial Average",
     "US100": "NASDAQ 100",
+    "SP500": "S&P 500 Index",
+    "UK100": "FTSE 100 Index",
+    "GER40": "DAX 40 Index",
+    "JPN225": "Nikkei 225 Index",
+    "HK50": "Hang Seng Index",
+    "AUS200": "S&P/ASX 200 Index",
     "NIFTY": "Nifty 50",
     "SENSEX": "BSE Sensex",
+    "BANKNIFTY": "Bank Nifty",
+    "FINNIFTY": "Fin Nifty",
+    "MIDCAPNIFTY": "Nifty Midcap 100",
+    "VIXNIFTY": "India VIX",
+    "AAPL": "Apple Inc.",
+    "MSFT": "Microsoft Corporation",
+    "GOOGL": "Alphabet Inc. (Google)",
+    "AMZN": "Amazon.com Inc.",
+    "NVDA": "NVIDIA Corporation",
+    "META": "Meta Platforms Inc. (Facebook)",
+    "TSLA": "Tesla Inc.",
+    "JPM": "JPMorgan Chase & Co.",
+    "V": "Visa Inc.",
+    "WMT": "Walmart Inc.",
+    "JNJ": "Johnson & Johnson",
+    "PG": "Procter & Gamble Co.",
+    "XOM": "Exxon Mobil Corporation",
+    "UNH": "UnitedHealth Group Inc.",
+    "HD": "The Home Depot Inc.",
+    "BAC": "Bank of America Corporation",
+    "DIS": "The Walt Disney Company",
+    "NFLX": "Netflix Inc.",
+    "ADBE": "Adobe Inc.",
+    "CRM": "Salesforce Inc.",
+    "INTC": "Intel Corporation",
+    "AMD": "Advanced Micro Devices Inc.",
+    "PYPL": "PayPal Holdings Inc.",
+    "UBER": "Uber Technologies Inc.",
+    "NKE": "Nike Inc.",
+    "BA": "The Boeing Company",
+    "COIN": "Coinbase Global Inc.",
+    "SNAP": "Snap Inc. (Snapchat)",
+    "SQ": "Block Inc. (Square)",
+    "PLTR": "Palantir Technologies Inc.",
+    "RBLX": "Roblox Corporation",
+    "MCD": "McDonald's Corporation",
+    "SBUX": "Starbucks Corporation",
+    "NIO": "NIO Inc.",
+    "RIVN": "Rivian Automotive Inc.",
+    "RELIANCE": "Reliance Industries Ltd.",
+    "TCS": "Tata Consultancy Services",
+    "HDFCBANK": "HDFC Bank Ltd.",
+    "INFY": "Infosys Ltd.",
+    "ICICIBANK": "ICICI Bank Ltd.",
+    "SBIN": "State Bank of India",
+    "BHARTI": "Bharti Airtel Ltd.",
+    "WIPRO": "Wipro Ltd.",
+    "ITC": "ITC Ltd.",
+    "LT": "Larsen & Toubro Ltd.",
+    "AXISBANK": "Axis Bank Ltd.",
+    "KOTAKBANK": "Kotak Mahindra Bank Ltd.",
+    "MARUTI": "Maruti Suzuki India Ltd.",
+    "TATAMOTORS": "Tata Motors Ltd.",
+    "ASIANPAINT": "Asian Paints Ltd.",
+    "HCLTECH": "HCL Technologies Ltd.",
+    "SUNPHARMA": "Sun Pharmaceutical Industries Ltd.",
+    "BAJFINANCE": "Bajaj Finance Ltd.",
+    "TITAN": "Titan Company Ltd.",
+    "NTPC": "NTPC Ltd.",
+    "ONGC": "Oil & Natural Gas Corporation Ltd.",
+    "POWERGRID": "Power Grid Corporation of India Ltd.",
+    "ULTRACEMCO": "UltraTech Cement Ltd.",
+    "TATASTEEL": "Tata Steel Ltd.",
+    "JSWSTEEL": "JSW Steel Ltd.",
+    "HINDALCO": "Hindalco Industries Ltd.",
+    "TECHM": "Tech Mahindra Ltd.",
+    "COALINDIA": "Coal India Ltd.",
+    "HINDUNILVR": "Hindustan Unilever Ltd.",
+    "BRITANNIA": "Britannia Industries Ltd.",
+    "NESTLEIND": "Nestlé India Ltd.",
+    "M&M": "Mahindra & Mahindra Ltd.",
+    "EICHERMOT": "Eicher Motors Ltd.",
+    "HEROMOTOCO": "Hero MotoCorp Ltd.",
+    "BAJAJ_AUTO": "Bajaj Auto Ltd.",
+    "TATACONSUM": "Tata Consumer Products Ltd.",
+    "DABUR": "Dabur India Ltd.",
+    "MARICO": "Marico Ltd.",
+    "HDFC": "HDFC Ltd.",
+    "ICICIPRUDI": "ICICI Prudential Life Insurance",
+    "HDFCLIFE": "HDFC Life Insurance Company",
+    "SBILIFE": "SBI Life Insurance Company",
+    "TRENT": "Trent Ltd.",
+    "AVENUE": "Avenue Supermarts Ltd. (DMart)",
+    "PIDILITIND": "Pidilite Industries Ltd.",
+    "HAVELLS": "Havells India Ltd.",
+    "SIEMENS": "Siemens Ltd.",
+    "BEL": "Bharat Electronics Ltd.",
+    "BHEL": "Bharat Heavy Electricals Ltd.",
+    "HAL": "Hindustan Aeronautics Ltd.",
+    "IRFC": "Indian Railway Finance Corporation",
+    "IREDA": "Indian Renewable Energy Development Agency",
+    "SUZLON": "Suzlon Energy Ltd.",
+    "ADANIENT": "Adani Enterprises Ltd.",
+    "ADANIPORTS": "Adani Ports & SEZ Ltd.",
+    "ADANIGREEN": "Adani Green Energy Ltd.",
+    "ADANITRANS": "Adani Transmission Ltd.",
+    "ADANIPOWER": "Adani Power Ltd.",
+    "HINDZINC": "Hindustan Zinc Ltd.",
+    "VEDL": "Vedanta Ltd.",
+    "IOC": "Indian Oil Corporation Ltd.",
+    "BPCL": "Bharat Petroleum Corporation Ltd.",
+    "GAIL": "GAIL (India) Ltd.",
+    "NATIONALUM": "National Aluminium Company Ltd.",
+    "ZOMATO": "Zomato Ltd.",
+    "SWIGGY": "Swiggy Ltd.",
+    "PAYTM": "One97 Communications Ltd. (Paytm)",
+    "POLICYBZR": "PB Fintech Ltd. (Policybazaar)",
+    "NYKAA": "FSN E-Commerce Ventures Ltd. (Nykaa)",
+    "HDFCAMC": "HDFC Asset Management Company",
+    "GRASIM": "Grasim Industries Ltd.",
+    "DIVISLAB": "Divi's Laboratories Ltd.",
+    "CIPLA": "Cipla Ltd.",
+    "DRREDDY": "Dr. Reddy's Laboratories Ltd.",
+    "APOLLOHOSP": "Apollo Hospitals Enterprise Ltd.",
+    "AUROPHARMA": "Aurobindo Pharma Ltd.",
+    "TVSMOTOR": "TVS Motor Company Ltd.",
 }
 
 FOREX_PRICE_API = "https://api.exchangerate-api.com/v4/latest/USD"
@@ -351,8 +791,10 @@ def log_signal(pair: str, direction: str, entry: float, tp1: float, tp2: float, 
 
 
 def get_active_provider() -> str:
-    if NEWS_PROVIDER in {"newsdata", "newsapi"}:
+    if NEWS_PROVIDER in {"newsdata", "newsapi", "finnhub"}:
         return NEWS_PROVIDER
+    if FINNHUB_API_KEY:
+        return "finnhub"
     if NEWS_API_KEY:
         return "newsapi"
     return "newsdata"
@@ -498,8 +940,127 @@ def fetch_current_prices() -> dict[str, float]:
         "US30": "^DJI",
         "US100": "^IXIC",
         "DXY": "DX-Y.NYB",
+        "SP500": "^GSPC",
+        "UK100": "^FTSE",
+        "GER40": "^GDAXI",
+        "JPN225": "^N225",
+        "HK50": "^HSI",
+        "AUS200": "^AXJO",
         "NIFTY": "^NSEI",
         "SENSEX": "^BSESN",
+        "BANKNIFTY": "^NSEBANK",
+        "AAPL": "AAPL",
+        "MSFT": "MSFT",
+        "GOOGL": "GOOGL",
+        "AMZN": "AMZN",
+        "NVDA": "NVDA",
+        "META": "META",
+        "TSLA": "TSLA",
+        "JPM": "JPM",
+        "V": "V",
+        "WMT": "WMT",
+        "JNJ": "JNJ",
+        "PG": "PG",
+        "XOM": "XOM",
+        "UNH": "UNH",
+        "HD": "HD",
+        "BAC": "BAC",
+        "DIS": "DIS",
+        "NFLX": "NFLX",
+        "ADBE": "ADBE",
+        "CRM": "CRM",
+        "INTC": "INTC",
+        "AMD": "AMD",
+        "PYPL": "PYPL",
+        "UBER": "UBER",
+        "NKE": "NKE",
+        "BA": "BA",
+        "COIN": "COIN",
+        "SNAP": "SNAP",
+        "SQ": "SQ",
+        "PLTR": "PLTR",
+        "RBLX": "RBLX",
+        "MCD": "MCD",
+        "SBUX": "SBUX",
+        "NIO": "NIO",
+        "RIVN": "RIVN",
+        "RELIANCE": "RELIANCE.NS",
+        "TCS": "TCS.NS",
+        "HDFCBANK": "HDFCBANK.NS",
+        "INFY": "INFY.NS",
+        "ICICIBANK": "ICICIBANK.NS",
+        "SBIN": "SBIN.NS",
+        "BHARTI": "BHARTIARTL.NS",
+        "WIPRO": "WIPRO.NS",
+        "ITC": "ITC.NS",
+        "LT": "LT.NS",
+        "AXISBANK": "AXISBANK.NS",
+        "KOTAKBANK": "KOTAKBANK.NS",
+        "MARUTI": "MARUTI.NS",
+        "TATAMOTORS": "TATAMOTORS.NS",
+        "ASIANPAINT": "ASIANPAINT.NS",
+        "HCLTECH": "HCLTECH.NS",
+        "SUNPHARMA": "SUNPHARMA.NS",
+        "BAJFINANCE": "BAJFINANCE.NS",
+        "TITAN": "TITAN.NS",
+        "NTPC": "NTPC.NS",
+        "ONGC": "ONGC.NS",
+        "POWERGRID": "POWERGRID.NS",
+        "ULTRACEMCO": "ULTRACEMCO.NS",
+        "TATASTEEL": "TATASTEEL.NS",
+        "JSWSTEEL": "JSWSTEEL.NS",
+        "HINDALCO": "HINDALCO.NS",
+        "TECHM": "TECHM.NS",
+        "COALINDIA": "COALINDIA.NS",
+        "HINDUNILVR": "HINDUNILVR.NS",
+        "BRITANNIA": "BRITANNIA.NS",
+        "NESTLEIND": "NESTLEIND.NS",
+        "M&M": "M&M.NS",
+        "EICHERMOT": "EICHERMOT.NS",
+        "HEROMOTOCO": "HEROMOTOCO.NS",
+        "BAJAJ_AUTO": "BAJAJ-AUTO.NS",
+        "TATACONSUM": "TATACONSUM.NS",
+        "DABUR": "DABUR.NS",
+        "MARICO": "MARICO.NS",
+        "HDFC": "HDFC.NS",
+        "ICICIPRUDI": "ICICIPRUDI.NS",
+        "HDFCLIFE": "HDFCLIFE.NS",
+        "SBILIFE": "SBILIFE.NS",
+        "TRENT": "TRENT.NS",
+        "AVENUE": "AVENUE.NS",
+        "PIDILITIND": "PIDILITIND.NS",
+        "HAVELLS": "HAVELLS.NS",
+        "SIEMENS": "SIEMENS.NS",
+        "BEL": "BEL.NS",
+        "BHEL": "BHEL.NS",
+        "HAL": "HAL.NS",
+        "IRFC": "IRFC.NS",
+        "IREDA": "IREDA.NS",
+        "SUZLON": "SUZLON.NS",
+        "ADANIENT": "ADANIENT.NS",
+        "ADANIPORTS": "ADANIPORTS.NS",
+        "ADANIGREEN": "ADANIGREEN.NS",
+        "ADANITRANS": "ADANITRANS.NS",
+        "ADANIPOWER": "ADANIPOWER.NS",
+        "HINDZINC": "HINDZINC.NS",
+        "VEDL": "VEDL.NS",
+        "IOC": "IOC.NS",
+        "BPCL": "BPCL.NS",
+        "GAIL": "GAIL.NS",
+        "NATIONALUM": "NATIONALUM.NS",
+        "ZOMATO": "ZOMATO.NS",
+        "SWIGGY": "SWIGGY.NS",
+        "PAYTM": "PAYTM.NS",
+        "POLICYBZR": "POLICYBZR.NS",
+        "NYKAA": "NYKAA.NS",
+        "HDFCAMC": "HDFCAMC.NS",
+        "GRASIM": "GRASIM.NS",
+        "DIVISLAB": "DIVISLAB.NS",
+        "CIPLA": "CIPLA.NS",
+        "DRREDDY": "DRREDDY.NS",
+        "APOLLOHOSP": "APOLLOHOSP.NS",
+        "AUROPHARMA": "AUROPHARMA.NS",
+        "TVSMOTOR": "TVSMOTOR.NS",
     }
     try:
         for pair, ticker in yf_map.items():
@@ -571,8 +1132,6 @@ def detect_asset_in_text(text: str) -> str | None:
 
 
 def ai_verify_trade_suggestion(trade_text: str, asset: str) -> str | None:
-    if not GROQ_API_KEY:
-        return None
     prompt = (
         "You are an expert trading analyst. Verify this trade suggestion:\n"
         f"{trade_text}\n\n"
@@ -581,12 +1140,10 @@ def ai_verify_trade_suggestion(trade_text: str, asset: str) -> str | None:
         "Reply: 'APPROVED - [reason]' or 'REJECTED - [reason]'. "
         "Be concise - max 2 sentences."
     )
-    return _groq_chat(prompt)
+    return _best_ai(prompt)
 
 
 def ai_enhance_trade_suggestion(trade_text: str, context_title: str) -> str | None:
-    if not GROQ_API_KEY:
-        return None
     prompt = (
         "You are an expert trading analyst improving a trade suggestion.\n"
         f"Current suggestion:\n{trade_text}\n\n"
@@ -600,7 +1157,7 @@ def ai_enhance_trade_suggestion(trade_text: str, context_title: str) -> str | No
         "Keep the same format (BUY/SELL, @, Targets:, SL). "
         "Max 2 sentences of explanation."
     )
-    result = _groq_chat(prompt)
+    result = _best_ai(prompt)
     if result and result.strip().upper() == "OK":
         return None
     return result
@@ -618,7 +1175,7 @@ def generate_asset_trade_setup(asset: str, question: str) -> str | None:
         f"Should we go LONG (buy) or SHORT (sell) {asset}? "
         "Reply with only one word: LONG or SHORT."
     )
-    direction = _groq_chat(dir_prompt, system_prompt=TRADING_SYSTEM_PROMPT)
+    direction = _best_ai(dir_prompt, system_prompt=TRADING_SYSTEM_PROMPT)
     if not direction:
         return None
     is_bullish = "LONG" in direction.strip().upper()
@@ -681,6 +1238,199 @@ def _groq_chat(prompt: str, system_prompt: str | None = None) -> str | None:
         return None
 
 
+# ── Finnhub API helpers ──────────────────────────────────────────────────────
+
+_FINNHUB_SESSION_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _finnhub_get(path: str, params: dict | None = None) -> dict | None:
+    if not FINNHUB_API_KEY:
+        return None
+    try:
+        p = dict(params or {})
+        p["token"] = FINNHUB_API_KEY
+        url = f"{FINNHUB_BASE}{path}?{urlencode(p)}"
+        with urlopen(url, timeout=10) as r:
+            return json.load(r)
+    except Exception:
+        return None
+
+
+def finnhub_quote(symbol: str) -> dict | None:
+    """Get real-time quote for a stock symbol from Finnhub."""
+    return _finnhub_get("/quote", {"symbol": symbol})
+
+
+def finnhub_company_news(symbol: str, from_date: str = "", to_date: str = "") -> list[dict]:
+    """Get company news from Finnhub."""
+    now = datetime.now(timezone.utc)
+    to_d = to_date or now.strftime("%Y-%m-%d")
+    from_d = from_date or (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    data = _finnhub_get("/company-news", {"symbol": symbol, "from": from_d, "to": to_d})
+    return data if isinstance(data, list) else []
+
+
+def finnhub_market_news(category: str = "general") -> list[dict]:
+    """Get market news. Categories: general, forex, crypto, merger."""
+    data = _finnhub_get("/news", {"category": category})
+    return data if isinstance(data, list) else []
+
+
+def finnhub_news_sentiment(symbol: str) -> dict | None:
+    """Get news sentiment for a stock from Finnhub."""
+    return _finnhub_get("/news-sentiment", {"symbol": symbol})
+
+
+def finnhub_stock_symbols(exchange: str = "US") -> list[dict]:
+    """Get list of stock symbols for an exchange."""
+    data = _finnhub_get("/stock/symbol", {"exchange": exchange})
+    return data if isinstance(data, list) else []
+
+
+def finnhub_company_profile(symbol: str) -> dict | None:
+    """Get company profile from Finnhub."""
+    return _finnhub_get("/stock/profile2", {"symbol": symbol})
+
+
+def finnhub_enrich_with_sentiment(asset: str) -> str | None:
+    """Enrich trade signal with Finnhub sentiment data."""
+    finnhub_symbol = _asset_to_finnhub_symbol(asset)
+    if not finnhub_symbol:
+        return None
+    quote = finnhub_quote(finnhub_symbol)
+    sentiment = finnhub_news_sentiment(finnhub_symbol)
+    parts: list[str] = []
+    if quote:
+        c = quote.get("c")
+        dp = quote.get("dp")
+        h = quote.get("h")
+        l = quote.get("l")
+        if c:
+            chg_str = f" ({'+' if dp and dp >= 0 else ''}{dp:.2f}%)" if dp else ""
+            parts.append(f"Last: {c}{chg_str}")
+            if h and l:
+                parts.append(f"Day Range: {l} - {h}")
+    if sentiment:
+        bs = sentiment.get("bearishPercent")
+        bsp = sentiment.get("bullishPercent")
+        if bs is not None and bsp is not None:
+            parts.append(f"Bearish: {bs:.1f}% / Bullish: {bsp:.1f}%")
+        mention = sentiment.get("mentionCount")
+        if mention:
+            parts.append(f"Mentions: {mention}")
+    return " | ".join(parts) if parts else None
+
+
+def _asset_to_finnhub_symbol(asset: str) -> str | None:
+    """Map internal asset symbols to Finnhub tickers."""
+    m = {
+        "AAPL": "AAPL", "MSFT": "MSFT", "GOOGL": "GOOGL", "AMZN": "AMZN",
+        "NVDA": "NVDA", "META": "META", "TSLA": "TSLA", "JPM": "JPM",
+        "V": "V", "WMT": "WMT", "JNJ": "JNJ", "PG": "PG",
+        "XOM": "XOM", "UNH": "UNH", "HD": "HD", "BAC": "BAC",
+        "DIS": "DIS", "NFLX": "NFLX", "ADBE": "ADBE", "CRM": "CRM",
+        "INTC": "INTC", "AMD": "AMD", "PYPL": "PYPL", "UBER": "UBER",
+        "NKE": "NKE", "BA": "BA", "COIN": "COIN", "SNAP": "SNAP",
+        "SQ": "SQ", "PLTR": "PLTR", "RBLX": "RBLX", "MCD": "MCD",
+        "SBUX": "SBUX", "NIO": "NIO", "RIVN": "RIVN",
+        "RELIANCE": "RELIANCE.NS", "TCS": "TCS.NS",
+        "HDFCBANK": "HDFCBANK.NS", "INFY": "INFY.NS",
+        "ICICIBANK": "ICICIBANK.NS", "SBIN": "SBIN.NS",
+        "BHARTI": "BHARTIARTL.NS", "WIPRO": "WIPRO.NS",
+        "ITC": "ITC.NS", "LT": "LT.NS", "MARUTI": "MARUTI.NS",
+        "TATAMOTORS": "TATAMOTORS.NS", "NIFTY": "^NSEI",
+        "SENSEX": "^BSESN", "XAU/USD": "GC=F", "XAG/USD": "SI=F",
+        "WTI": "CL=F", "BRENT": "BZ=F", "BTC/USD": "BTC-USD",
+        "ETH/USD": "ETH-USD",
+    }
+    return m.get(asset)
+
+
+# ── OpenAI API helper (alternative to Groq) ──────────────────────────────────
+
+def _openai_chat(prompt: str, system_prompt: str | None = None) -> str | None:
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        import requests
+        messages: list[dict] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4o-mini",
+                "messages": messages,
+                "max_tokens": 500,
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        text = resp.json()["choices"][0]["message"]["content"].strip()
+        return escape(text)
+    except Exception:
+        return None
+
+
+def _best_ai(prompt: str, system_prompt: str | None = None) -> str | None:
+    """Try OpenAI first, fall back to Groq."""
+    result = _openai_chat(prompt, system_prompt)
+    if result:
+        return result
+    return _groq_chat(prompt, system_prompt)
+
+
+def ai_enhanced_market_analysis(asset: str, news_text: str) -> str | None:
+    """Use OpenAI for deeper market analysis with Finnhub data enrichment."""
+    finnhub_data = finnhub_enrich_with_sentiment(asset)
+    context = f"Asset: {asset}\nNews: {news_text[:500]}"
+    if finnhub_data:
+        context += f"\nMarket Data: {finnhub_data}"
+    prompt = (
+        "You are an expert financial analyst. Analyze this asset based on the news and market data provided.\n\n"
+        f"{context}\n\n"
+        "Provide:\n"
+        "1. Direction bias (Bullish/Bearish/Neutral) with confidence level\n"
+        "2. Key support and resistance levels\n"
+        "3. Entry strategy with specific price zones\n"
+        "4. Risk management advice\n"
+        "Keep it concise - max 5 sentences."
+    )
+    return _best_ai(prompt, "You are a professional trading analyst. Be factual and data-driven.")
+
+
+def finnhub_fetch_news(category: str = "general") -> list[dict]:
+    """Fetch news from Finnhub and normalize to our format."""
+    raw = finnhub_market_news(category)
+    articles: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        pub = item.get("datetime")
+        pub_dt = ""
+        if pub:
+            try:
+                pub_dt = datetime.fromtimestamp(pub, tz=timezone.utc).isoformat()
+            except Exception:
+                pub_dt = ""
+        articles.append({
+            "article_id": item.get("id") or item.get("url") or item.get("headline", ""),
+            "title": item.get("headline", ""),
+            "description": item.get("summary", ""),
+            "link": item.get("url", ""),
+            "pubDate": pub_dt,
+            "source_name": item.get("source", "Finnhub"),
+            "keywords": item.get("categories", []),
+            "related": item.get("related", ""),
+        })
+    return articles
+
+
 def build_market_context() -> str:
     ctx_parts: list[str] = []
     try:
@@ -705,19 +1455,28 @@ def ai_analyze_news(article: dict[str, Any]) -> str | None:
     title = article.get("title", "")
     desc = (article.get("description") or "")[:200]
     market_ctx = build_market_context()
+
+    asset = identify_asset(article)
+    finnhub_enrichment = ""
+    if asset and asset != "MARKET":
+        try:
+            fh = finnhub_enrich_with_sentiment(asset)
+            if fh:
+                finnhub_enrichment = f"\nFinnhub Data: {fh}"
+        except Exception:
+            pass
+
     prompt = (
         f"News: {title}\n{desc}\n\n"
-        f"{market_ctx}\n\n"
+        f"{market_ctx}{finnhub_enrichment}\n\n"
         "Give a 1-line trading insight for this financial news. "
         "Mention direction (bullish/bearish) and which asset. "
         "Be specific (entry bias, key level). Max 20 words."
     )
-    return _groq_chat(prompt, system_prompt=TRADING_SYSTEM_PROMPT)
+    return _best_ai(prompt, system_prompt=TRADING_SYSTEM_PROMPT)
 
 
 def ai_answer_question(question: str) -> str | None:
-    if not GROQ_API_KEY:
-        return None
     market_ctx = build_market_context()
     prompt = (
         "You are an expert forex and stock market trading analyst. "
@@ -728,7 +1487,7 @@ def ai_answer_question(question: str) -> str | None:
         f"Question: {question}\n\n"
         "Keep it under 150 words. Be specific about entry zones, not just direction."
     )
-    return _groq_chat(prompt, system_prompt=TRADING_SYSTEM_PROMPT)
+    return _best_ai(prompt, system_prompt=TRADING_SYSTEM_PROMPT)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -855,6 +1614,18 @@ def format_stock_price_info(asset: str) -> str | None:
     try:
         import indian_market as im
         yf_map = {
+            "AAPL": "AAPL", "MSFT": "MSFT", "GOOGL": "GOOGL",
+            "AMZN": "AMZN", "NVDA": "NVDA", "META": "META",
+            "TSLA": "TSLA", "JPM": "JPM", "V": "V",
+            "WMT": "WMT", "JNJ": "JNJ", "PG": "PG",
+            "XOM": "XOM", "UNH": "UNH", "HD": "HD",
+            "BAC": "BAC", "DIS": "DIS", "NFLX": "NFLX",
+            "ADBE": "ADBE", "CRM": "CRM", "INTC": "INTC",
+            "AMD": "AMD", "PYPL": "PYPL", "UBER": "UBER",
+            "NKE": "NKE", "BA": "BA", "COIN": "COIN",
+            "SNAP": "SNAP", "SQ": "SQ", "PLTR": "PLTR",
+            "RBLX": "RBLX", "MCD": "MCD", "SBUX": "SBUX",
+            "NIO": "NIO", "RIVN": "RIVN",
             "RELIANCE": "RELIANCE.NS", "TCS": "TCS.NS", "HDFCBANK": "HDFCBANK.NS",
             "INFY": "INFY.NS", "ICICIBANK": "ICICIBANK.NS", "SBIN": "SBIN.NS",
             "BHARTI": "BHARTIARTL.NS", "WIPRO": "WIPRO.NS", "ITC": "ITC.NS",
@@ -864,7 +1635,36 @@ def format_stock_price_info(asset: str) -> str | None:
             "SUNPHARMA": "SUNPHARMA.NS", "BAJFINANCE": "BAJFINANCE.NS",
             "TITAN": "TITAN.NS", "NTPC": "NTPC.NS", "ONGC": "ONGC.NS",
             "POWERGRID": "POWERGRID.NS", "ULTRACEMCO": "ULTRACEMCO.NS",
-            "NIFTY": "^NSEI", "SENSEX": "^BSESN",
+            "TATASTEEL": "TATASTEEL.NS", "JSWSTEEL": "JSWSTEEL.NS",
+            "HINDALCO": "HINDALCO.NS", "TECHM": "TECHM.NS",
+            "COALINDIA": "COALINDIA.NS", "HINDUNILVR": "HINDUNILVR.NS",
+            "BRITANNIA": "BRITANNIA.NS", "NESTLEIND": "NESTLEIND.NS",
+            "M&M": "M&M.NS", "EICHERMOT": "EICHERMOT.NS",
+            "HEROMOTOCO": "HEROMOTOCO.NS",
+            "TATACONSUM": "TATACONSUM.NS", "DABUR": "DABUR.NS",
+            "MARICO": "MARICO.NS", "HDFC": "HDFC.NS",
+            "ICICIPRUDI": "ICICIPRUDI.NS", "HDFCLIFE": "HDFCLIFE.NS",
+            "SBILIFE": "SBILIFE.NS", "TRENT": "TRENT.NS",
+            "AVENUE": "AVENUE.NS", "PIDILITIND": "PIDILITIND.NS",
+            "HAVELLS": "HAVELLS.NS", "SIEMENS": "SIEMENS.NS",
+            "BEL": "BEL.NS", "BHEL": "BHEL.NS", "HAL": "HAL.NS",
+            "IRFC": "IRFC.NS", "IREDA": "IREDA.NS", "SUZLON": "SUZLON.NS",
+            "ADANIENT": "ADANIENT.NS", "ADANIPORTS": "ADANIPORTS.NS",
+            "ADANIGREEN": "ADANIGREEN.NS", "ADANITRANS": "ADANITRANS.NS",
+            "ADANIPOWER": "ADANIPOWER.NS",
+            "HINDZINC": "HINDZINC.NS", "VEDL": "VEDL.NS",
+            "IOC": "IOC.NS", "BPCL": "BPCL.NS", "GAIL": "GAIL.NS",
+            "NATIONALUM": "NATIONALUM.NS",
+            "ZOMATO": "ZOMATO.NS", "SWIGGY": "SWIGGY.NS",
+            "PAYTM": "PAYTM.NS", "POLICYBZR": "POLICYBZR.NS",
+            "NYKAA": "NYKAA.NS", "HDFCAMC": "HDFCAMC.NS",
+            "GRASIM": "GRASIM.NS", "DIVISLAB": "DIVISLAB.NS",
+            "CIPLA": "CIPLA.NS", "DRREDDY": "DRREDDY.NS",
+            "APOLLOHOSP": "APOLLOHOSP.NS", "AUROPHARMA": "AUROPHARMA.NS",
+            "TVSMOTOR": "TVSMOTOR.NS",
+            "NIFTY": "^NSEI", "SENSEX": "^BSESN", "BANKNIFTY": "^NSEBANK",
+            "SP500": "^GSPC", "UK100": "^FTSE", "GER40": "^GDAXI",
+            "JPN225": "^N225", "HK50": "^HSI", "AUS200": "^AXJO",
         }
         yf_symbol = yf_map.get(asset)
         if not yf_symbol:
@@ -922,6 +1722,25 @@ def load_newsapi_articles(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def fetch_latest_articles(query: str = FOREX_QUERY) -> list[dict[str, Any]]:
     provider = get_active_provider()
+
+    if provider == "finnhub":
+        categories = ["general", "forex", "crypto", "merger"]
+        all_articles: list[dict] = []
+        for cat in categories:
+            try:
+                articles = finnhub_fetch_news(cat)
+                all_articles.extend(articles)
+            except Exception:
+                pass
+        seen = set()
+        unique = []
+        for a in all_articles:
+            k = article_key(a)
+            if k and k not in seen:
+                seen.add(k)
+                unique.append(a)
+        return unique
+
     url = build_newsapi_url(query) if provider == "newsapi" else build_newsdata_url(query)
     with urlopen(url, timeout=30) as response:
         payload = json.load(response)
@@ -1008,7 +1827,15 @@ _USD_QUOTE_PAIRS = frozenset({
     "XAU/USD", "XAG/USD",
     "BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD", "ADA/USD",
     "DOGE/USD", "DOT/USD", "AVAX/USD", "LINK/USD", "LTC/USD",
-    "WTI", "BRENT", "US30", "US100",
+    "WTI", "BRENT", "US30", "US100", "SP500", "UK100", "GER40",
+    "JPN225", "HK50", "AUS200",
+    "USD/CHF", "USD/CAD", "USD/MXN", "USD/ZAR", "USD/TRY",
+    "USD/SGD", "USD/HKD", "USD/CNY",
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
+    "JPM", "V", "WMT", "JNJ", "PG", "XOM", "UNH", "HD", "BAC",
+    "DIS", "NFLX", "ADBE", "CRM", "INTC", "AMD", "PYPL", "UBER",
+    "NKE", "BA", "COIN", "SNAP", "SQ", "PLTR", "RBLX", "MCD",
+    "SBUX", "NIO", "RIVN",
 })
 
 
@@ -1160,6 +1987,17 @@ def format_calendar_alert_md(events: list[dict]) -> str | None:
     return "\n".join(lines)
 
 
+def _finnhub_sentiment_line(asset: str) -> str:
+    """Add Finnhub sentiment enrichment line if data available."""
+    try:
+        fh = finnhub_enrich_with_sentiment(asset)
+        if fh:
+            return f"📊 *Sentiment:* {_strip_md(fh)}"
+    except Exception:
+        pass
+    return ""
+
+
 def format_forex_message(article: dict[str, Any]) -> str:
     """Template 1 — Forex/Crypto trade signal or news alert."""
     title     = _strip_md(article.get("title") or "Market Update")
@@ -1216,6 +2054,8 @@ def format_forex_message(article: dict[str, Any]) -> str:
                     f"🤖 AI Confidence: {conf_pct}%",
                     f"📝 {ai_reason[:250]}",
                     f"",
+                    _finnhub_sentiment_line(asset).replace("*", ""),
+                    f"",
                     f"🔖 #{asset_sym}  #forex  #signal",
                     f"⚠️ _Not financial advice. Trade at your own risk._",
                 ]
@@ -1244,6 +2084,8 @@ def format_forex_message(article: dict[str, Any]) -> str:
         f"━━━━━━━━━━━━━━━━━━",
         f"⚡ *Analysis:*",
         f"{ai_analysis[:350]}",
+        f"",
+        _finnhub_sentiment_line(asset),
         f"",
         f"🔖 #{asset}  #forex  #news",
     ]
@@ -1354,7 +2196,24 @@ def format_intraday_message(article: dict[str, Any]) -> str:
         "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "SBIN", "BHARTI",
         "WIPRO", "ITC", "LT", "AXISBANK", "KOTAKBANK", "MARUTI", "TATAMOTORS",
         "ASIANPAINT", "HCLTECH", "SUNPHARMA", "BAJFINANCE", "TITAN", "NTPC",
-        "ONGC", "POWERGRID", "ULTRACEMCO", "NIFTY", "SENSEX",
+        "ONGC", "POWERGRID", "ULTRACEMCO", "NIFTY", "SENSEX", "BANKNIFTY",
+        "TATASTEEL", "JSWSTEEL", "HINDALCO", "TECHM", "COALINDIA",
+        "HINDUNILVR", "BRITANNIA", "NESTLEIND", "M&M", "EICHERMOT",
+        "HEROMOTOCO", "BAJAJ-AUTO", "TATACONSUM", "DABUR", "MARICO",
+        "HDFC", "ICICIPRUDI", "HDFCLIFE", "SBILIFE", "TRENT", "AVENUE",
+        "PIDILITIND", "HAVELLS", "SIEMENS", "BEL", "BHEL", "HAL",
+        "IRFC", "IREDA", "SUZLON", "ADANIENT", "ADANIPORTS",
+        "ADANIGREEN", "ADANITRANS", "ADANIPOWER", "HINDZINC", "VEDL",
+        "IOC", "BPCL", "GAIL", "NATIONALUM", "ZOMATO", "SWIGGY",
+        "PAYTM", "POLICYBZR", "NYKAA", "HDFCAMC", "GRASIM",
+        "DIVISLAB", "CIPLA", "DRREDDY", "APOLLOHOSP", "AUROPHARMA",
+        "TVSMOTOR",
+    } else "NYSE/NASDAQ" if asset in {
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
+        "JPM", "V", "WMT", "JNJ", "PG", "XOM", "UNH", "HD", "BAC",
+        "DIS", "NFLX", "ADBE", "CRM", "INTC", "AMD", "PYPL", "UBER",
+        "NKE", "BA", "COIN", "SNAP", "SQ", "PLTR", "RBLX", "MCD",
+        "SBUX", "NIO", "RIVN",
     } else "BSE/NSE"
 
     pairs_list = TRADE_PAIRS.get(asset)
@@ -1542,7 +2401,7 @@ async def run_worker_cycle(bot: Bot, chat_id: str, seen_keys: set[str]) -> int:
 
 def validate_config() -> list[str]:
     missing = []
-    if BOT_TOKEN == "PLACEHOLDER_TOKEN_REVOKED":
+    if not BOT_TOKEN:
         missing.append("BOT_TOKEN")
     if not TELEGRAM_CHAT_ID:
         missing.append("TELEGRAM_CHAT_ID")
@@ -1551,6 +2410,9 @@ def validate_config() -> list[str]:
     if provider == "newsapi":
         if not NEWS_API_KEY:
             missing.append("NEWS_API_KEY")
+    elif provider == "finnhub":
+        if not FINNHUB_API_KEY:
+            missing.append("FINNHUB_API_KEY")
     elif not NEWSDATA_API_KEY:
         missing.append("NEWSDATA_API_KEY")
 
@@ -1871,6 +2733,13 @@ async def _ny_close_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await session_summary_job(ctx, "New York Forex", False, ["NewYork", "forex", "session"])
 
 
+async def _realtime_polling_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run VIX spike, pre-market gap, and economic calendar checks."""
+    sent = realtime_alert.run_polling_cycle()
+    if sent:
+        print(f"[REALTIME] {sent} alert(s) sent via polling cycle.")
+
+
 async def worker_loop() -> None:
     global _seen_keys, _signal_log
     _seen_keys  = load_seen_keys()
@@ -1889,9 +2758,19 @@ async def worker_loop() -> None:
 
     jq = app.job_queue
 
+    # ── Start Finnhub WebSocket listener in background ────────────────────────
+    try:
+        realtime_alert.start_websocket_thread()
+        print("[REALTIME] Finnhub WebSocket listener started.")
+    except Exception as e:
+        print(f"[REALTIME] WebSocket thread failed: {e}")
+
     # ── Regular news broadcast & high-impact monitoring ───────────────────────
     jq.run_repeating(news_broadcast_job,      interval=FETCH_INTERVAL_SECONDS,       first=10)
     jq.run_repeating(high_impact_check_job,   interval=HIGH_IMPACT_CHECK_INTERVAL,   first=5)
+
+    # ── Real-time monitoring polling checks ───────────────────────────────────
+    jq.run_repeating(_realtime_polling_job,   interval=300, first=30)  # every 5 minutes
 
     # ── Morning briefing: 8:00 AM IST = 02:30 UTC ────────────────────────────
     jq.run_daily(morning_briefing_job,  time=time(hour=2,  minute=30), name="morning_briefing")

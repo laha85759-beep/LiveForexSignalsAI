@@ -2,3 +2,4 @@ python-telegram-bot==22.8
 yfinance==1.4.0
 deep-translator==1.11.4
 requests==2.32.3
+websocket-client==1.8.0

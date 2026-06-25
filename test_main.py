@@ -95,7 +95,7 @@ class NewsHelpersTests(unittest.TestCase):
     def test_identify_asset_returns_symbol_when_found(self):
         article = {"title": "Dollar strengthens against euro"}
 
-        self.assertEqual(main.identify_asset(article), "USD")
+        self.assertEqual(main.identify_asset(article), "EUR")
 
     def test_identify_asset_returns_market_fallback(self):
         article = {"title": "Unknown financial news"}
@@ -309,7 +309,7 @@ class AsyncWorkerTests(unittest.IsolatedAsyncioTestCase):
 
 class MainTests(unittest.TestCase):
     def test_validate_config_lists_missing_variables_for_newsdata(self):
-        with patch.object(main, "BOT_TOKEN", "PLACEHOLDER_TOKEN_REVOKED"), patch.object(main, "TELEGRAM_CHAT_ID", ""), patch.object(main, "NEWS_PROVIDER", "newsdata"), patch.object(main, "NEWSDATA_API_KEY", ""):
+        with patch.object(main, "BOT_TOKEN", ""), patch.object(main, "TELEGRAM_CHAT_ID", ""), patch.object(main, "NEWS_PROVIDER", "newsdata"), patch.object(main, "NEWSDATA_API_KEY", ""):
             missing = main.validate_config()
 
         self.assertEqual(missing, ["BOT_TOKEN", "TELEGRAM_CHAT_ID", "NEWSDATA_API_KEY"])
@@ -333,7 +333,7 @@ class MainTests(unittest.TestCase):
         coroutine_arg.close()
 
     def test_main_returns_error_when_config_missing(self):
-        with patch.object(main, "BOT_TOKEN", "PLACEHOLDER_TOKEN_REVOKED"), patch.object(main, "TELEGRAM_CHAT_ID", ""), patch.object(main, "NEWS_PROVIDER", "newsapi"), patch.object(main, "NEWS_API_KEY", ""):
+        with patch.object(main, "BOT_TOKEN", ""), patch.object(main, "TELEGRAM_CHAT_ID", ""), patch.object(main, "NEWS_PROVIDER", "newsapi"), patch.object(main, "NEWS_API_KEY", ""):
             self.assertEqual(main.main(), 1)
 
 

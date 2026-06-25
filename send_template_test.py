@@ -4,12 +4,13 @@ Matches the HTML template design exactly.
 """
 import io
 import json
+import os
 import urllib.request
 import urllib.parse
 from PIL import Image, ImageDraw, ImageFont
 
-BOT_TOKEN = "8710452375:AAG-pqR8amkjx772hAYiLC_0WymUcoruVqE"
-CHAT_ID = "6207722743"
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ── Colours (from the HTML template) ────────────────────────────────────────
 C_BG        = (30,  58,  95)   # #1e3a5f  navy bubble
