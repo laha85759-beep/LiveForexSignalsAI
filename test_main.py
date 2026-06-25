@@ -47,14 +47,15 @@ class NewsHelpersTests(unittest.TestCase):
             "link": "https://example.com/story",
         }
 
-        with patch.object(main, "ai_analyze_news", return_value=None):
+        with patch.object(main, "ai_analyze_news", return_value=None), \
+             patch.object(main, "_groq_chat", return_value=None), \
+             patch.object(main, "translate_to_bengali", return_value=None):
             message = main.format_forex_message(article)
 
-        self.assertIn("FOREX SIGNAL", message)
-        self.assertIn("Asset:", message)
-        self.assertIn("Summary:", message)
-        self.assertIn("Trade Suggestion:", message)
-        self.assertIn("https://example.com/story", message)
+        self.assertIn("TradeSignal Pro", message)
+        self.assertIn("AI Signal", message)
+        self.assertIn("EUR/USD", message)
+        self.assertIn("AI Confidence", message)
 
     def test_format_india_message_includes_all_mandatory_fields(self):
         article = {
@@ -65,12 +66,13 @@ class NewsHelpersTests(unittest.TestCase):
             "link": "https://example.com/nifty",
         }
 
-        message = main.format_india_message(article)
+        with patch.object(main, "translate_to_bengali", return_value=None), \
+             patch.object(main, "format_stock_price_info", return_value=None):
+            message = main.format_india_message(article)
 
-        self.assertIn("INDIA MARKET NEWS", message)
-        self.assertIn("Asset:", message)
-        self.assertIn("Summary:", message)
-        self.assertIn("Trade Suggestion:", message)
+        self.assertIn("INR", message)
+        self.assertIn("Analysis:", message)
+        self.assertIn("SIGNAL", message)
 
     def test_format_intraday_message_includes_all_mandatory_fields(self):
         article = {
@@ -81,12 +83,14 @@ class NewsHelpersTests(unittest.TestCase):
             "link": "https://example.com/reliance",
         }
 
-        message = main.format_intraday_message(article)
+        with patch.object(main, "translate_to_bengali", return_value=None), \
+             patch.object(main, "format_stock_price_info", return_value=None):
+            message = main.format_intraday_message(article)
 
-        self.assertIn("INTRADAY STOCK ALERT", message)
-        self.assertIn("Stock:", message)
-        self.assertIn("Summary:", message)
-        self.assertIn("Trade Suggestion:", message)
+        self.assertIn("RELIANCE", message)
+        self.assertIn("NSE", message)
+        self.assertIn("Analysis:", message)
+        self.assertIn("SIGNAL", message)
 
     def test_identify_asset_returns_symbol_when_found(self):
         article = {"title": "Dollar strengthens against euro"}
@@ -154,14 +158,118 @@ class NewsHelpersTests(unittest.TestCase):
         self.assertEqual(articles[0]["link"], "https://example.com/a")
 
 
+class BilingualAndStockTests(unittest.TestCase):
+    def test_translate_to_bengali_handles_import_error(self):
+        result = main.translate_to_bengali("")
+        self.assertIsNone(result)
+
+    def test_translate_to_bengali_handles_api_error(self):
+        with patch.object(main, "urlopen", side_effect=Exception("Network error")), \
+             patch("deep_translator.GoogleTranslator", side_effect=Exception("API error")):
+            result = main.translate_to_bengali("Hello world")
+        self.assertIsNone(result)
+
+    def test_format_forex_message_includes_bengali_summary_when_available(self):
+        article = {
+            "title": "Dollar rises on Fed",
+            "source_name": "Reuters",
+            "pubDate": "2026-06-23 10:00:00",
+            "description": "The US dollar climbed higher.",
+            "link": "https://example.com",
+        }
+
+        with patch.object(main, "ai_analyze_news", return_value=None), \
+             patch.object(main, "_groq_chat", return_value=None), \
+             patch.object(main, "translate_to_bengali", return_value="মার্কিন ডলার বেড়েছে"):
+            message = main.format_forex_message(article)
+
+        self.assertIn("TradeSignal Pro", message)
+        self.assertNotIn("মার্কিন ডলার বেড়েছে", message)
+        self.assertNotIn("বাংলা", message)
+
+    def test_format_forex_message_skips_bengali_when_unavailable(self):
+        article = {
+            "title": "Dollar rises on Fed",
+            "source_name": "Reuters",
+            "pubDate": "2026-06-23 10:00:00",
+            "description": "The US dollar climbed higher.",
+            "link": "https://example.com",
+        }
+
+        with patch.object(main, "ai_analyze_news", return_value=None), \
+             patch.object(main, "_groq_chat", return_value=None), \
+             patch.object(main, "translate_to_bengali", return_value=None):
+            message = main.format_forex_message(article)
+
+        self.assertIn("TradeSignal Pro", message)
+        self.assertNotIn("বাংলা", message)
+
+    def test_format_intraday_message_shows_exchange_tag(self):
+        article = {
+            "title": "TCS wins big deal",
+            "source_name": "Bloomberg",
+            "pubDate": "2026-06-23 10:00:00",
+            "description": "TCS shares surged on contract win.",
+            "link": "https://example.com/tcs",
+        }
+
+        with patch.object(main, "translate_to_bengali", return_value=None), \
+             patch.object(main, "format_stock_price_info", return_value=None):
+            message = main.format_intraday_message(article)
+
+        self.assertIn("TCS", message)
+        self.assertIn("NSE", message)
+
+    def test_format_stock_price_info_returns_none_for_unknown_asset(self):
+        result = main.format_stock_price_info("UNKNOWN")
+        self.assertIsNone(result)
+
+    def test_format_india_message_includes_stock_price_when_available(self):
+        article = {
+            "title": "HDFC Bank gains on strong results",
+            "source_name": "Economic Times",
+            "pubDate": "2026-06-23 10:00:00",
+            "description": "HDFC Bank shares rose after quarterly results.",
+            "link": "https://example.com/hdfc",
+        }
+
+        with patch.object(main, "translate_to_bengali", return_value=None), \
+             patch.object(main, "format_stock_price_info", return_value="<b>Live Price:</b> 1800.50 (+15.20 | +0.85%)"):
+            message = main.format_india_message(article)
+
+        self.assertIn("Live Price:", message)
+        self.assertIn("1800.50", message)
+
+    def test_more_indian_stocks_in_currency_hints(self):
+        self.assertIn("WIPRO", main.CURRENCY_HINTS)
+        self.assertIn("ITC", main.CURRENCY_HINTS)
+        self.assertIn("TATAMOTORS", main.CURRENCY_HINTS)
+        self.assertIn("BAJFINANCE", main.CURRENCY_HINTS)
+        self.assertIn("ULTRACEMCO", main.CURRENCY_HINTS)
+
+
+class AIQuestionTests(unittest.TestCase):
+    def test_ai_answer_question_returns_none_without_key(self):
+        with patch.object(main, "GROQ_API_KEY", ""):
+            result = main.ai_answer_question("Is EUR/USD bullish?")
+        self.assertIsNone(result)
+
+    def test_ai_answer_question_handles_api_error(self):
+        with patch.object(main, "GROQ_API_KEY", "demo-key"), \
+             patch.object(main, "urlopen", side_effect=Exception("API error")):
+            result = main.ai_answer_question("Is EUR/USD bullish?")
+        self.assertIsNone(result)
+
+
 class AsyncWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_category_article_sends_one_and_deduplicates(self):
         bot = AsyncMock()
         seen_keys = set()
+        recent_date = main.datetime.now(main.timezone.utc).isoformat()
         articles = [
-            {"article_id": "1", "title": "Dollar rises on Fed optimism", "description": "USD gains", "link": "https://a", "pubDate": "2026-06-23T10:00:00Z"},
-            {"article_id": "1", "title": "Dollar rises on Fed optimism", "description": "USD gains", "link": "https://a", "pubDate": "2026-06-23T10:00:00Z"},
-            {"article_id": "2", "title": "Euro climbs on ECB rate hold", "description": "EUR gains", "link": "https://b", "pubDate": "2026-06-23T10:00:00Z"},
+            {"article_id": "1", "title": "Dollar rises on Fed optimism", "description": "USD gains", "link": "https://a", "pubDate": recent_date},
+            {"article_id": "1", "title": "Dollar rises on Fed optimism", "description": "USD gains", "link": "https://a", "pubDate": recent_date},
+            {"article_id": "2", "title": "Euro climbs on ECB rate hold", "description": "EUR gains", "link": "https://b", "pubDate": recent_date},
         ]
 
         sent = await main.send_category_article(bot, "@channel", articles, seen_keys, "forex", main.format_forex_message)
@@ -173,8 +281,9 @@ class AsyncWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_category_article_skips_seen_keys(self):
         bot = AsyncMock()
         seen_keys = {"forex:1"}
+        recent_date = main.datetime.now(main.timezone.utc).isoformat()
         articles = [
-            {"article_id": "1", "title": "Dollar rises on Fed optimism", "description": "USD gains", "link": "https://a", "pubDate": "2026-06-23T10:00:00Z"},
+            {"article_id": "1", "title": "Dollar rises on Fed optimism", "description": "USD gains", "link": "https://a", "pubDate": recent_date},
         ]
 
         sent = await main.send_category_article(bot, "@channel", articles, seen_keys, "forex", main.format_forex_message)
@@ -185,8 +294,9 @@ class AsyncWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_worker_cycle_sends_forex_and_india_messages(self):
         bot = AsyncMock()
         seen_keys = set()
+        recent_date = main.datetime.now(main.timezone.utc).isoformat()
 
-        article = {"article_id": "1", "title": "Euro rises on ECB outlook", "description": "EUR gains", "link": "https://a", "pubDate": "2026-06-23T10:00:00Z"}
+        article = {"article_id": "1", "title": "Euro rises on ECB outlook", "description": "EUR gains", "link": "https://a", "pubDate": recent_date}
 
         with patch.object(main, "fetch_latest_articles", return_value=[article]), \
              patch.object(main, "send_options_suggestion", return_value=0), \
