@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from contextlib import contextmanager
 from datetime import datetime, time, timedelta, timezone
 from html import escape
 from typing import Any
@@ -14,6 +15,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 import massive_data
 import realtime_alert
+import ai_agent
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -32,8 +34,10 @@ HIGH_IMPACT_CHECK_INTERVAL = int(os.getenv("HIGH_IMPACT_CHECK_INTERVAL", "60"))
 
 SENT_KEYS_FILE = "sent_articles.json"
 SIGNAL_LOG_FILE = "signal_log.json"
+SUBSCRIBERS_FILE = "subscribers.json"
 _seen_keys: set[str] = set()
 _signal_log: list[dict] = []
+_subscribers: list[int] = []
 
 FOREX_QUERY = os.getenv(
     "FOREX_QUERY",
@@ -771,6 +775,41 @@ def load_signal_log() -> list[dict]:
 def save_signal_log(log: list[dict]) -> None:
     with open(SIGNAL_LOG_FILE, "w") as f:
         json.dump(log, f, indent=2)
+
+
+def load_subscribers() -> list[int]:
+    try:
+        with open(SUBSCRIBERS_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def save_subscribers(subs: list[int]) -> None:
+    with open(SUBSCRIBERS_FILE, "w") as f:
+        json.dump(subs, f)
+
+
+def _backfill_subscribers_from_updates() -> None:
+    global _subscribers
+    try:
+        from urllib.request import urlopen
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+        resp = urlopen(url, timeout=10)
+        data = json.loads(resp.read().decode())
+        added = 0
+        for upd in data.get("result", []):
+            msg = upd.get("message")
+            if msg:
+                cid = msg.get("chat", {}).get("id")
+                if cid and isinstance(cid, int) and cid not in _subscribers:
+                    _subscribers.append(cid)
+                    added += 1
+        if added:
+            save_subscribers(_subscribers)
+            print(f"[BACKFILL] Added {added} chat ID(s) from recent updates.")
+    except Exception as exc:
+        print(f"[BACKFILL] Skipped (not critical): {exc}")
 
 
 def log_signal(pair: str, direction: str, entry: float, tp1: float, tp2: float, sl: float, source: str) -> None:
@@ -1511,7 +1550,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _subscribers
     try:
+        chat_id = update.effective_chat.id
+        if chat_id not in _subscribers:
+            _subscribers.append(chat_id)
+            save_subscribers(_subscribers)
+            print(f"[SUBSCRIBE] Chat {chat_id} subscribed via message")
+
         question = update.message.text.strip()
         if not question:
             return
@@ -1838,6 +1884,26 @@ _USD_QUOTE_PAIRS = frozenset({
     "SBUX", "NIO", "RIVN",
 })
 
+_STOCK_ASSETS = frozenset({
+    "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "SBIN", "BHARTI",
+    "WIPRO", "ITC", "LT", "AXISBANK", "KOTAKBANK", "MARUTI", "TATAMOTORS",
+    "ASIANPAINT", "HCLTECH", "SUNPHARMA", "BAJFINANCE", "TITAN", "NTPC",
+    "ONGC", "POWERGRID", "ULTRACEMCO", "TATASTEEL", "JSWSTEEL", "HINDALCO",
+    "TECHM", "COALINDIA", "HINDUNILVR", "BRITANNIA", "NESTLEIND", "M&M",
+    "EICHERMOT", "HEROMOTOCO", "BAJAJ-AUTO", "TATACONSUM", "DABUR", "MARICO",
+    "HDFC", "ICICIPRUDI", "HDFCLIFE", "SBILIFE", "TRENT", "AVENUE",
+    "PIDILITIND", "HAVELLS", "SIEMENS", "BEL", "BHEL", "HAL",
+    "IRFC", "IREDA", "SUZLON", "ADANIENT", "ADANIPORTS",
+    "ADANIGREEN", "ADANITRANS", "ADANIPOWER", "HINDZINC", "VEDL",
+    "IOC", "BPCL", "GAIL", "NATIONALUM", "ZOMATO", "SWIGGY",
+    "PAYTM", "POLICYBZR", "NYKAA", "HDFCAMC", "GRASIM",
+    "DIVISLAB", "CIPLA", "DRREDDY", "APOLLOHOSP", "AUROPHARMA", "TVSMOTOR",
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
+    "JPM", "V", "WMT", "JNJ", "PG", "XOM", "UNH", "HD", "BAC",
+    "DIS", "NFLX", "ADBE", "CRM", "INTC", "AMD", "PYPL", "UBER",
+    "NKE", "BA", "COIN", "SNAP", "SQ", "PLTR", "RBLX", "MCD", "SBUX", "NIO", "RIVN",
+})
+
 
 def _price_str(val: float, pair: str) -> str:
     if pair in _USD_QUOTE_PAIRS:
@@ -1851,6 +1917,16 @@ def _price_str(val: float, pair: str) -> str:
     elif abs(val) >= 1:
         return f"{val:.2f}"
     return f"{val:.4f}"
+
+
+def _calc_percentage_levels(price: float, is_buy: bool,
+                            tp1_pct: float = 1.0, tp2_pct: float = 2.0,
+                            sl_pct: float = 0.5) -> tuple[float, float, float, float]:
+    entry = round(price, 2)
+    tp1 = round(price * (1 + tp1_pct / 100) if is_buy else price * (1 - tp1_pct / 100), 2)
+    tp2 = round(price * (1 + tp2_pct / 100) if is_buy else price * (1 - tp2_pct / 100), 2)
+    sl  = round(price * (1 - sl_pct / 100) if is_buy else price * (1 + sl_pct / 100), 2)
+    return entry, tp1, tp2, sl
 
 
 def format_professional_signal(
@@ -2056,7 +2132,23 @@ def format_forex_message(article: dict[str, Any]) -> str:
                     f"",
                     _finnhub_sentiment_line(asset).replace("*", ""),
                     f"",
-                    f"🔖 #{asset_sym}  #forex  #signal",
+                    f"━━━━━━━━━━━━━━━━━━",
+                    f"🧠 *AI Learning Assistant* — _Tailored for your level_",
+                    f"",
+                    f"📘 *Beginner:* {dir_icon} means we expect {pair} to {'rise' if is_buy else 'fall'}. "
+                    f"Entry at {_price_str(e, pair)} is where the trade opens. "
+                    f"SL ({_price_str(s, pair)}) limits losses. TP targets lock in profits.",
+                    f"",
+                    f"📙 *Intermediate:* Price at {_price_str(e, pair)} with "
+                    f"{'bullish' if is_buy else 'bearish'} bias from news. "
+                    f"Risk ${abs(s-e):.2f} to target ${abs(t1-e):.2f} (TP1) / ${abs(t2-e):.2f} (TP2). "
+                    f"R:R of 1:{rr_str} offers favorable risk-to-reward.",
+                    f"",
+                    f"📈 *Experienced:* Watch for {'resistance' if is_buy else 'support'} near "
+                    f"{_price_str(t1, pair)}. Momentum confirmation on breakout. "
+                    f"Consider partial exits at TP1, trailing SL to breakeven after TP1 hit.",
+                    f"",
+                    f"🔖 #{asset_sym}  #forex  #signal  #{'long' if is_buy else 'short'}",
                     f"⚠️ _Not financial advice. Trade at your own risk._",
                 ]
                 if link:
@@ -2123,15 +2215,20 @@ def format_india_message(article: dict[str, Any]) -> str:
     pairs_list = TRADE_PAIRS.get(asset)
     entry_str = sl_str = tp1_str = tp2_str = "Monitor levels"
     sl_diff = tp1_diff = tp2_diff = ""
+    is_buy = False
+    e = t1 = t2 = s = 0.0
     if pairs_list:
         pair, multiplier, pip_size = pairs_list[0]
         price = prices.get(pair)
         if price:
             is_buy = (direction == "Bullish") == (multiplier > 0)
-            e  = round(price, 2)
-            t1 = round(price + 30 * pip_size if is_buy else price - 30 * pip_size, 2)
-            t2 = round(price + 50 * pip_size if is_buy else price - 50 * pip_size, 2)
-            s  = round(price - 20 * pip_size if is_buy else price + 20 * pip_size, 2)
+            if asset in _STOCK_ASSETS:
+                e, t1, t2, s = _calc_percentage_levels(price, is_buy)
+            else:
+                e = round(price, 2)
+                t1 = round(price + 30 * pip_size if is_buy else price - 30 * pip_size, 2)
+                t2 = round(price + 50 * pip_size if is_buy else price - 50 * pip_size, 2)
+                s  = round(price - 20 * pip_size if is_buy else price + 20 * pip_size, 2)
             entry_str = _price_str(e, pair)
             sl_str    = _price_str(s, pair)
             tp1_str   = _price_str(t1, pair)
@@ -2139,7 +2236,7 @@ def format_india_message(article: dict[str, Any]) -> str:
             sl_diff   = _price_str(abs(s - e), pair)
             tp1_diff  = _price_str(abs(t1 - e), pair)
             tp2_diff  = _price_str(abs(t2 - e), pair)
-            log_signal(pair, direction, e, t1, t2, s, "india")
+            log_signal(pair, "BUY" if is_buy else "SELL", e, t1, t2, s, "india")
 
     live_price = format_stock_price_info(asset)
     lines = [
@@ -2152,18 +2249,62 @@ def format_india_message(article: dict[str, Any]) -> str:
     if live_price:
         lines.append(live_price)
         lines.append("")
-    lines.extend([
-        f"━━━━━━━━━━━━━━━━━━",
-        f"📌 Entry zone:   {entry_str}",
-        f"🛑 Stop loss:    {sl_str}" + (f"  (-{sl_diff})" if sl_diff else ""),
-        f"🎯 Target 1:     {tp1_str}" + (f"  (+{tp1_diff})" if tp1_diff else ""),
-        f"🎯 Target 2:     {tp2_str}" + (f"  (+{tp2_diff})" if tp2_diff else ""),
-        f"🤖 Confidence:   {conf_pct}%",
-        f"━━━━━━━━━━━━━━━━━━",
-        f"📊 *Analysis:* {ai_insight[:300]}",
-        f"",
-        f"🔖 #{asset}  #NSE  #BSE  #India  #news",
-    ])
+    if pairs_list and price:
+        entry_icon = "🟢 BUY" if is_buy else "🔴 SELL"
+        if asset in _STOCK_ASSETS:
+            pct_tp1 = abs(t1 - e) / e * 100
+            pct_tp2 = abs(t2 - e) / e * 100
+            pct_sl = abs(s - e) / e * 100
+            rr = abs(t2 - e) / abs(s - e) if abs(s - e) > 0 else 0
+            lines.extend([
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📌 Entry:       {entry_str}",
+                f"🛑 Stop Loss:   {sl_str}  (-{pct_sl:.1f}%)",
+                f"🎯 TP 1:        {tp1_str}  (+{pct_tp1:.1f}%)",
+                f"🎯 TP 2:        {tp2_str}  (+{pct_tp2:.1f}%)",
+                f"⚖️ R:R:         1:{rr:.1f}",
+                f"🤖 Confidence:  {conf_pct}%",
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📊 *Analysis:* {ai_insight[:300]}",
+                f"",
+                f"━━━━━━━━━━━━━━━━━━",
+                f"🧠 *AI Learning Assistant* — _Tailored for your level_",
+                f"",
+                f"📘 *Beginner:* {entry_icon} means we expect the price to {'rise' if is_buy else 'fall'}. "
+                f"Entry at {entry_str}, stop-loss at {sl_str} limits risk, "
+                f"targets at {tp1_str} and {tp2_str} lock in profits.",
+                f"",
+                f"📙 *Intermediate:* {'Bullish' if is_buy else 'Bearish'} bias from news. "
+                f"Entry at {entry_str} with {pct_sl:.1f}% risk for {pct_tp2:.1f}% reward (R:R 1:{rr:.1f}). "
+                f"Consider scaling out 50% at TP1, trailing SL to entry after TP1 hit.",
+                f"",
+                f"📈 *Experienced:* Key level at {entry_str}. "
+                f"{'Resistance' if not is_buy else 'Support'} cluster near {tp1_str}. "
+                f"Volume confirmation needed. Monitor {asset} for liquidity shifts.",
+                f"",
+                f"🔖 #{asset}  #NSE  #BSE  #India  #{'long' if is_buy else 'short'}",
+                f"⚠️ _Not financial advice. Trade at your own risk._",
+            ])
+        else:
+            lines.extend([
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📌 Entry zone:   {entry_str}",
+                f"🛑 Stop loss:    {sl_str}" + (f"  (-{sl_diff})" if sl_diff else ""),
+                f"🎯 Target 1:     {tp1_str}" + (f"  (+{tp1_diff})" if tp1_diff else ""),
+                f"🎯 Target 2:     {tp2_str}" + (f"  (+{tp2_diff})" if tp2_diff else ""),
+                f"🤖 Confidence:   {conf_pct}%",
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📊 *Analysis:* {ai_insight[:300]}",
+                f"",
+                f"🔖 #{asset}  #NSE  #BSE  #India  #news",
+            ])
+    else:
+        lines.extend([
+            f"━━━━━━━━━━━━━━━━━━",
+            f"📊 *Analysis:* {ai_insight[:300]}",
+            f"",
+            f"🔖 #{asset}  #NSE  #BSE  #India  #news",
+        ])
     if source:
         lines.append(f"📰 _{source}  |  {published}_")
     return "\n".join(lines)
@@ -2219,15 +2360,20 @@ def format_intraday_message(article: dict[str, Any]) -> str:
     pairs_list = TRADE_PAIRS.get(asset)
     entry_str = sl_str = tp1_str = tp2_str = "Monitor levels"
     sl_diff = tp1_diff = tp2_diff = ""
+    is_buy = False
+    e = t1 = t2 = s = 0.0
     if pairs_list:
         pair, multiplier, pip_size = pairs_list[0]
         price = prices.get(pair)
         if price:
             is_buy = (direction == "Bullish") == (multiplier > 0)
-            e  = round(price, 2)
-            t1 = round(price + 30 * pip_size if is_buy else price - 30 * pip_size, 2)
-            t2 = round(price + 50 * pip_size if is_buy else price - 50 * pip_size, 2)
-            s  = round(price - 20 * pip_size if is_buy else price + 20 * pip_size, 2)
+            if asset in _STOCK_ASSETS:
+                e, t1, t2, s = _calc_percentage_levels(price, is_buy)
+            else:
+                e = round(price, 2)
+                t1 = round(price + 30 * pip_size if is_buy else price - 30 * pip_size, 2)
+                t2 = round(price + 50 * pip_size if is_buy else price - 50 * pip_size, 2)
+                s  = round(price - 20 * pip_size if is_buy else price + 20 * pip_size, 2)
             entry_str = _price_str(e, pair)
             sl_str    = _price_str(s, pair)
             tp1_str   = _price_str(t1, pair)
@@ -2235,7 +2381,7 @@ def format_intraday_message(article: dict[str, Any]) -> str:
             sl_diff   = _price_str(abs(s - e), pair)
             tp1_diff  = _price_str(abs(t1 - e), pair)
             tp2_diff  = _price_str(abs(t2 - e), pair)
-            log_signal(pair, direction, e, t1, t2, s, "intraday")
+            log_signal(pair, "BUY" if is_buy else "SELL", e, t1, t2, s, "intraday")
 
     live_price = format_stock_price_info(asset)
     lines = [
@@ -2248,26 +2394,101 @@ def format_intraday_message(article: dict[str, Any]) -> str:
     if live_price:
         lines.append(live_price)
         lines.append("")
-    lines.extend([
-        f"━━━━━━━━━━━━━━━━━━",
-        f"📌 Entry zone:   {entry_str}",
-        f"🛑 Stop loss:    {sl_str}" + (f"  (-{sl_diff})" if sl_diff else ""),
-        f"🎯 Target 1:     {tp1_str}" + (f"  (+{tp1_diff})" if tp1_diff else ""),
-        f"🎯 Target 2:     {tp2_str}" + (f"  (+{tp2_diff})" if tp2_diff else ""),
-        f"🤖 Confidence:   {conf_pct}%",
-        f"━━━━━━━━━━━━━━━━━━",
-        f"📊 *Analysis:* {ai_insight[:300]}",
-        f"",
-        f"🔖 #{asset}  #intraday  #{exchange_tag}  #India",
-    ])
+    if pairs_list and price:
+        entry_icon = "🟢 BUY" if is_buy else "🔴 SELL"
+        if asset in _STOCK_ASSETS:
+            pct_tp1 = abs(t1 - e) / e * 100
+            pct_tp2 = abs(t2 - e) / e * 100
+            pct_sl = abs(s - e) / e * 100
+            rr = abs(t2 - e) / abs(s - e) if abs(s - e) > 0 else 0
+            lines.extend([
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📌 Entry:       {entry_str}",
+                f"🛑 Stop Loss:   {sl_str}  (-{pct_sl:.1f}%)",
+                f"🎯 TP 1:        {tp1_str}  (+{pct_tp1:.1f}%)",
+                f"🎯 TP 2:        {tp2_str}  (+{pct_tp2:.1f}%)",
+                f"⚖️ R:R:         1:{rr:.1f}",
+                f"🤖 Confidence:  {conf_pct}%",
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📊 *Analysis:* {ai_insight[:300]}",
+                f"",
+                f"━━━━━━━━━━━━━━━━━━",
+                f"🧠 *AI Learning Assistant* — _Tailored for your level_",
+                f"",
+                f"📘 *Beginner:* {entry_icon} means we expect the stock to {'rise' if is_buy else 'fall'}. "
+                f"Entry at {entry_str}, stop-loss at {sl_str} to limit losses, "
+                f"targets at {tp1_str} (TP1) and {tp2_str} (TP2) for profit taking.",
+                f"",
+                f"📙 *Intermediate:* {'Bullish' if is_buy else 'Bearish'} bias on {asset} from news. "
+                f"Entry {entry_str} with {pct_sl:.1f}% risk for {pct_tp2:.1f}% potential (R:R 1:{rr:.1f}). "
+                f"Book 50% at TP1, trail SL to breakeven.",
+                f"",
+                f"📈 *Experienced:* Watch price action at {entry_str}. "
+                f"{'Resistance' if not is_buy else 'Support'} near {tp1_str}. "
+                f"Look for volume confirmation. Manage position size based on volatility.",
+                f"",
+                f"🔖 #{asset}  #intraday  #{exchange_tag}  #{'long' if is_buy else 'short'}",
+                f"⚠️ _Not financial advice. Trade at your own risk._",
+            ])
+        else:
+            lines.extend([
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📌 Entry zone:   {entry_str}",
+                f"🛑 Stop loss:    {sl_str}" + (f"  (-{sl_diff})" if sl_diff else ""),
+                f"🎯 Target 1:     {tp1_str}" + (f"  (+{tp1_diff})" if tp1_diff else ""),
+                f"🎯 Target 2:     {tp2_str}" + (f"  (+{tp2_diff})" if tp2_diff else ""),
+                f"🤖 Confidence:   {conf_pct}%",
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📊 *Analysis:* {ai_insight[:300]}",
+                f"",
+                f"🔖 #{asset}  #intraday  #{exchange_tag}  #India",
+            ])
+    else:
+        lines.extend([
+            f"━━━━━━━━━━━━━━━━━━",
+            f"📊 *Analysis:* {ai_insight[:300]}",
+            f"",
+            f"🔖 #{asset}  #intraday  #{exchange_tag}  #India",
+        ])
     if source:
         lines.append(f"📰 _{source}  |  {published}_")
     return "\n".join(lines)
 
 
+async def broadcast(bot: Bot, text: str, parse_mode: str = "Markdown", disable_web_page_preview: bool = True) -> int:
+    global _subscribers
+    sent = 0
+    targets: list[int | str] = list(_subscribers)
+    if TELEGRAM_CHAT_ID:
+        targets.insert(0, TELEGRAM_CHAT_ID)
+
+    seen_cids: set[int | str] = set()
+    for cid in targets:
+        if cid in seen_cids:
+            continue
+        seen_cids.add(cid)
+        try:
+            await bot.send_message(
+                chat_id=cid,
+                text=text,
+                parse_mode=parse_mode,
+                disable_web_page_preview=disable_web_page_preview,
+            )
+            sent += 1
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if "blocked" in err_str or "forbidden" in err_str or "chat not found" in err_str:
+                if isinstance(cid, int) and cid in _subscribers:
+                    _subscribers.remove(cid)
+                    save_subscribers(_subscribers)
+                    print(f"[BROADCAST] Removed blocked/subscriber {cid}")
+            else:
+                print(f"[BROADCAST] Failed to send to {cid}: {exc}")
+    return sent
+
+
 async def send_category_article(
     bot: Bot,
-    chat_id: str,
     articles: list[dict[str, Any]],
     seen_keys: set[str],
     category_prefix: str,
@@ -2287,19 +2508,14 @@ async def send_category_article(
         if not text:
             continue
 
-        await bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-        )
+        await broadcast(bot, text)
         seen_keys.add(full_key)
         save_seen_keys(seen_keys)
         return 1
     return 0
 
 
-async def send_options_suggestion(bot: Bot, chat_id: str, seen_keys: set[str]) -> int:
+async def send_options_suggestion(bot: Bot, seen_keys: set[str]) -> int:
     import indian_market as im
 
     nifty_suggestion = im.format_nifty_options_suggestion()
@@ -2310,12 +2526,7 @@ async def send_options_suggestion(bot: Bot, chat_id: str, seen_keys: set[str]) -
     if nifty_suggestion:
         key = f"option:nifty_{today}"
         if key not in seen_keys:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=nifty_suggestion,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
+            await broadcast(bot, nifty_suggestion, parse_mode="HTML")
             seen_keys.add(key)
             save_seen_keys(seen_keys)
             sent += 1
@@ -2324,12 +2535,7 @@ async def send_options_suggestion(bot: Bot, chat_id: str, seen_keys: set[str]) -
     if sensex_suggestion:
         key = f"option:sensex_{today}"
         if key not in seen_keys:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=sensex_suggestion,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
+            await broadcast(bot, sensex_suggestion, parse_mode="HTML")
             seen_keys.add(key)
             save_seen_keys(seen_keys)
             sent += 1
@@ -2337,7 +2543,7 @@ async def send_options_suggestion(bot: Bot, chat_id: str, seen_keys: set[str]) -
     return sent
 
 
-async def send_institutional_signals(bot: Bot, chat_id: str, seen_keys: set[str]) -> int:
+async def send_institutional_signals(bot: Bot, seen_keys: set[str]) -> int:
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     key = f"institutional_signals:{today}"
     if key in seen_keys:
@@ -2349,10 +2555,7 @@ async def send_institutional_signals(bot: Bot, chat_id: str, seen_keys: set[str]
     try:
         block = massive_data.format_institutional_signal_block()
         if block:
-            await bot.send_message(
-                chat_id=chat_id, text=block,
-                parse_mode="Markdown", disable_web_page_preview=True,
-            )
+            await broadcast(bot, block)
             seen_keys.add(key)
             save_seen_keys(seen_keys)
             sent += 1
@@ -2360,10 +2563,7 @@ async def send_institutional_signals(bot: Bot, chat_id: str, seen_keys: set[str]
 
         commodity_block = massive_data.format_commodity_signal_block()
         if commodity_block:
-            await bot.send_message(
-                chat_id=chat_id, text=commodity_block,
-                parse_mode="Markdown", disable_web_page_preview=True,
-            )
+            await broadcast(bot, commodity_block)
             sent += 1
             print("[COMMODITY WATCH] Sent commodity prices")
     except Exception as e:
@@ -2372,29 +2572,29 @@ async def send_institutional_signals(bot: Bot, chat_id: str, seen_keys: set[str]
     return sent
 
 
-async def run_worker_cycle(bot: Bot, chat_id: str, seen_keys: set[str]) -> int:
+async def run_worker_cycle(bot: Bot, seen_keys: set[str]) -> int:
     total_sent = 0
 
     forex_articles = fetch_latest_articles(FOREX_QUERY)
     total_sent += await send_category_article(
-        bot, chat_id, forex_articles, seen_keys,
+        bot, forex_articles, seen_keys,
         "forex", format_forex_message,
     )
 
     india_articles = fetch_latest_articles(INDIA_MARKET_QUERY)
     total_sent += await send_category_article(
-        bot, chat_id, india_articles, seen_keys,
+        bot, india_articles, seen_keys,
         "india", format_india_message,
     )
 
     intraday_articles = fetch_latest_articles(INTRADAY_STOCK_QUERY)
     total_sent += await send_category_article(
-        bot, chat_id, intraday_articles, seen_keys,
+        bot, intraday_articles, seen_keys,
         "intraday", format_intraday_message,
     )
 
-    total_sent += await send_options_suggestion(bot, chat_id, seen_keys)
-    total_sent += await send_institutional_signals(bot, chat_id, seen_keys)
+    total_sent += await send_options_suggestion(bot, seen_keys)
+    total_sent += await send_institutional_signals(bot, seen_keys)
 
     return total_sent
 
@@ -2422,7 +2622,7 @@ def validate_config() -> list[str]:
 async def news_broadcast_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     global _seen_keys
     try:
-        sent_count = await run_worker_cycle(context.bot, TELEGRAM_CHAT_ID, _seen_keys)
+        sent_count = await run_worker_cycle(context.bot, _seen_keys)
         if sent_count:
             print(f"Worker cycle complete. Sent {sent_count} message(s).")
     except Exception as exc:
@@ -2461,12 +2661,7 @@ async def high_impact_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 confidence_pct=conf_pct,
                 analysis=ai_analysis or "Significant market-moving event detected.",
             )
-            await context.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID,
-                text=text_msg,
-                parse_mode="Markdown",
-                disable_web_page_preview=True,
-            )
+            await broadcast(context.bot, text_msg)
             _seen_keys.add(full_key)
             save_seen_keys(_seen_keys)
             print(f"[HIGH IMPACT NEWS] Text alert sent: {(article.get('title') or '')[:80]}")
@@ -2492,12 +2687,7 @@ async def high_impact_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 alert_text = format_calendar_alert_md([ev])
                 if not alert_text:
                     continue
-                await context.bot.send_message(
-                    chat_id=TELEGRAM_CHAT_ID,
-                    text=alert_text,
-                    parse_mode="Markdown",
-                    disable_web_page_preview=True,
-                )
+                await broadcast(context.bot, alert_text)
                 _seen_keys.add(cal_key)
                 save_seen_keys(_seen_keys)
                 print(f"[CALENDAR] Alert: {ev['title']} ({ev['country']}) in {mins_until}m")
@@ -2579,12 +2769,7 @@ async def morning_briefing_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"{overview}\n\n"
             f"🔖 #morning  #briefing  #forex  #NSE  #crypto"
         )
-        await context.bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID,
-            text=text,
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-        )
+        await broadcast(context.bot, text)
         print(f"[MORNING BRIEFING] Sent for {date_str}")
     except Exception as exc:
         print(f"[ERROR] Morning briefing failed: {exc}")
@@ -2637,12 +2822,7 @@ async def premarket_india_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             f"💡 *Pre-Market Signal:* {outlook}\n\n"
             f"🔖 #premarket  #NSE  #BSE  #India"
         )
-        await context.bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID,
-            text=text,
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-        )
+        await broadcast(context.bot, text)
         print(f"[PRE-MARKET INDIA] Sent for {date_str}")
     except Exception as exc:
         print(f"[ERROR] Pre-market India job failed: {exc}")
@@ -2702,12 +2882,7 @@ async def session_summary_job(
             f"{outlook}\n\n"
             f"🔖 {tag_str}"
         )
-        await context.bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID,
-            text=text,
-            parse_mode="Markdown",
-            disable_web_page_preview=True,
-        )
+        await broadcast(context.bot, text)
         print(f"[SESSION] {session_name} {'OPEN' if is_open else 'CLOSE'} summary sent.")
     except Exception as exc:
         print(f"[ERROR] Session summary job failed: {exc}")
@@ -2740,6 +2915,94 @@ async def _realtime_polling_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
         print(f"[REALTIME] {sent} alert(s) sent via polling cycle.")
 
 
+# ── AI Agent Improvement Job ─────────────────────────────────────────────────
+@contextmanager
+def _period_counter():
+    _period_counter._n = getattr(_period_counter, "_n", 0) + 1
+    yield _period_counter._n
+    _period_counter._n = getattr(_period_counter, "_n", 0)
+
+async def ai_agent_improvement_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """AI agent runs every ~30 min to improve trade suggestions and app quality."""
+    try:
+        with _period_counter() as cycle:
+            now_ist = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+            time_str = now_ist.strftime("%H:%M IST")
+
+            # 1. BTC market update every cycle
+            try:
+                btc_update = ai_agent.generate_btc_market_update()
+                if btc_update:
+                    btc_block = ai_agent.format_btc_market_update(btc_update)
+                    await broadcast(context.bot, btc_block)
+                    print(f"[AI AGENT] BTC market update sent at {time_str}")
+            except Exception as e:
+                print(f"[AI AGENT] BTC update failed: {e}")
+
+            # 2. BTC trade suggestion every other cycle (every ~60 min)
+            if cycle % 2 == 0:
+                try:
+                    btc_suggestion = ai_agent.generate_btc_trade_suggestion()
+                    if btc_suggestion:
+                        btc_sig_block = ai_agent.format_btc_signal_block(btc_suggestion)
+                        await broadcast(context.bot, btc_sig_block)
+                        print(f"[AI AGENT] BTC trade suggestion sent at {time_str}")
+                except Exception as e:
+                    print(f"[AI AGENT] BTC suggestion failed: {e}")
+
+            # 3. Educational tip every 6 cycles (~3 hours)
+            if cycle % 6 == 0:
+                try:
+                    recent_signals = load_signal_log()[-20:]
+                    tip = ai_agent.generate_market_education_tip(recent_signals)
+                    if tip:
+                        await broadcast(context.bot, f"🧠 *AI Education Tip*\n\n{tip}")
+                        print(f"[AI AGENT] Education tip sent at {time_str}")
+                except Exception as e:
+                    print(f"[AI AGENT] Education tip failed: {e}")
+
+            # 4. System improvement report twice daily (every ~12 hours = cycle 24)
+            if cycle % 24 == 0:
+                try:
+                    recent_signals = load_signal_log()[-50:]
+                    improvement = ai_agent.analyze_recent_signals_for_improvement(recent_signals)
+                    if improvement:
+                        await broadcast(
+                            context.bot,
+                            f"🤖 *AI System Improvement Report*\n\n{improvement}",
+                        )
+                        print(f"[AI AGENT] Improvement report sent at {time_str}")
+                except Exception as e:
+                    print(f"[AI AGENT] Improvement report failed: {e}")
+
+            # 5. Market snapshot every 8 cycles (~4 hours)
+            if cycle % 8 == 0:
+                try:
+                    prices = fetch_current_prices()
+                    snapshot_lines = [
+                        f"📸 *AI Market Snapshot* — {time_str}",
+                        f"━━━━━━━━━━━━━━━━━━",
+                    ]
+                    for pair in ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD", "ETH/USD",
+                                 "US100", "US30", "DXY", "NIFTY", "WTI"]:
+                        p = prices.get(pair)
+                        if p:
+                            snapshot_lines.append(f"  {pair}: {_price_str(p, pair)}")
+                    snapshot_lines.append("")
+                    enh = ai_agent.enhance_message_for_trader_levels(
+                        "\n".join(snapshot_lines), "intermediate",
+                    )
+                    snapshot_lines.append(f"💡 {enh}")
+                    await broadcast(context.bot, "\n".join(snapshot_lines))
+                    print(f"[AI AGENT] Market snapshot sent at {time_str}")
+                except Exception as e:
+                    print(f"[AI AGENT] Market snapshot failed: {e}")
+
+            print(f"[AI AGENT] Cycle {cycle} completed at {time_str}")
+    except Exception as exc:
+        print(f"[AI AGENT] Job failed: {exc}")
+
+
 async def worker_loop() -> None:
     global _seen_keys, _signal_log
     _seen_keys  = load_seen_keys()
@@ -2768,6 +3031,9 @@ async def worker_loop() -> None:
     # ── Regular news broadcast & high-impact monitoring ───────────────────────
     jq.run_repeating(news_broadcast_job,      interval=FETCH_INTERVAL_SECONDS,       first=10)
     jq.run_repeating(high_impact_check_job,   interval=HIGH_IMPACT_CHECK_INTERVAL,   first=5)
+
+    # ── AI Agent improvement loop (every 30 min) ─────────────────────────────
+    jq.run_repeating(ai_agent_improvement_job, interval=1800, first=60)
 
     # ── Real-time monitoring polling checks ───────────────────────────────────
     jq.run_repeating(_realtime_polling_job,   interval=300, first=30)  # every 5 minutes

@@ -7,7 +7,6 @@ from telegram import Bot
 
 from main import (
     BOT_TOKEN,
-    TELEGRAM_CHAT_ID,
     load_seen_keys,
     run_worker_cycle,
     save_seen_keys,
@@ -25,7 +24,7 @@ async def run_once() -> int:
     seen_keys = load_seen_keys()
     print(f"Loaded {len(seen_keys)} previously sent article keys.")
 
-    sent = await run_worker_cycle(bot, TELEGRAM_CHAT_ID, seen_keys)
+    sent = await run_worker_cycle(bot, seen_keys)
     save_seen_keys(seen_keys)
     print(f"Cycle complete. Sent {sent} message(s).")
     return 0
