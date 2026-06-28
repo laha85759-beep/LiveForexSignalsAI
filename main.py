@@ -2481,8 +2481,8 @@ async def broadcast(bot: Bot, text: str, parse_mode: str = "Markdown", disable_w
     if bot2:
         bots.append(bot2)
 
-    seen_cids: set[int | str] = set()
     for b in bots:
+        seen_cids: set[int | str] = set()
         for cid in targets:
             if cid in seen_cids:
                 continue
