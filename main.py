@@ -1531,8 +1531,15 @@ def ai_answer_question(question: str) -> str | None:
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _subscribers
+    chat_id = update.effective_chat.id
+    if chat_id not in _subscribers:
+        _subscribers.append(chat_id)
+        save_subscribers(_subscribers)
+        print(f"[SUBSCRIBE] Chat {chat_id} subscribed via /start")
     await update.message.reply_text(
         "<b>ForexSignalAI Trade Analyzer</b>\n\n"
+        "You are now subscribed to trading signals and market updates.\n\n"
         "Send me any trading or market question and I'll analyze it with AI.\n\n"
         "Examples:\n"
         "- Is EUR/USD bullish today?\n"
@@ -1544,9 +1551,59 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _subscribers
+    chat_id = update.effective_chat.id
+    if chat_id not in _subscribers:
+        _subscribers.append(chat_id)
+        save_subscribers(_subscribers)
+        print(f"[SUBSCRIBE] Chat {chat_id} subscribed via /help")
     await update.message.reply_text(
         "Send any trading or market question. "
         "I will analyze it using AI and provide trading insights."
+    )
+
+
+async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _subscribers
+    chat_id = update.effective_chat.id
+    if chat_id in _subscribers:
+        await update.message.reply_text("You are already subscribed to trading signals.")
+        return
+    _subscribers.append(chat_id)
+    save_subscribers(_subscribers)
+    print(f"[SUBSCRIBE] Chat {chat_id} subscribed via /subscribe")
+    await update.message.reply_text(
+        "✅ You are now subscribed to trading signals and market updates!\n\n"
+        "You will receive:\n"
+        "• Forex / crypto / stock trade signals\n"
+        "• India NSE/BSE intraday alerts\n"
+        "• BTC market updates & trade ideas\n"
+        "• AI educational tips\n"
+        "• Morning briefing & session summaries\n\n"
+        "Use /unsubscribe to stop."
+    )
+
+
+async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global _subscribers
+    chat_id = update.effective_chat.id
+    if chat_id in _subscribers:
+        _subscribers.remove(chat_id)
+        save_subscribers(_subscribers)
+        print(f"[UNSUBSCRIBE] Chat {chat_id} unsubscribed")
+    await update.message.reply_text("You have been unsubscribed from trading signals.")
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    is_sub = chat_id in _subscribers
+    await update.message.reply_text(
+        f"🔔 Subscription status: {'✅ Active' if is_sub else '❌ Not subscribed'}\n\n"
+        f"Chat ID: `{chat_id}`\n"
+        f"Total subscribers: `{len(_subscribers)}`\n\n"
+        f"Use /subscribe to start receiving signals.\n"
+        f"Use /unsubscribe to stop.",
+        parse_mode="Markdown",
     )
 
 
@@ -3025,19 +3082,25 @@ async def ai_agent_improvement_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def worker_loop() -> None:
-    global _seen_keys, _signal_log
+    global _seen_keys, _signal_log, _subscribers
     _seen_keys  = load_seen_keys()
     _signal_log = load_signal_log()
+    _subscribers = load_subscribers()
     provider    = get_active_provider()
 
     print("ForexSignalAI worker started.")
     print(f"Polling {provider} every {FETCH_INTERVAL_SECONDS}s / high-impact every {HIGH_IMPACT_CHECK_INTERVAL}s")
     print(f"Loaded {len(_seen_keys)} previously sent article keys.")
+    print(f"Loaded {len(_subscribers)} subscriber(s).")
+    _backfill_subscribers_from_updates()
 
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start",  start_command))
     app.add_handler(CommandHandler("help",   help_command))
+    app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
+    app.add_handler(CommandHandler("status", status_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question))
 
     jq = app.job_queue

@@ -8,6 +8,7 @@ import sys
 from telegram import Bot
 
 import ai_agent
+import main as _main
 from main import (
     BOT_TOKEN,
     _price_str,
@@ -110,7 +111,10 @@ async def run_once() -> int:
 
     bot = Bot(BOT_TOKEN)
     seen_keys = load_seen_keys()
+    _main._subscribers = _main.load_subscribers()
+    _main._backfill_subscribers_from_updates()
     print(f"Loaded {len(seen_keys)} previously sent article keys.")
+    print(f"Loaded {len(_main._subscribers)} subscriber(s).")
 
     sent = await run_worker_cycle(bot, seen_keys)
     save_seen_keys(seen_keys)
