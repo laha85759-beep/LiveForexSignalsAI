@@ -16,6 +16,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 import massive_data
 import realtime_alert
 import ai_agent
+import crypto_screener
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BOT_TOKEN2 = os.getenv("BOT_TOKEN2", "").strip()
@@ -2704,6 +2705,16 @@ def validate_config() -> list[str]:
     return missing
 
 
+async def crypto_screener_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Periodic crypto pump/dump screening job."""
+    try:
+        sent = crypto_screener.run_scan_cycle()
+        if sent:
+            print(f"[CRYPTO SCREENER] Sent {sent} pump alert(s).")
+    except Exception as exc:
+        print(f"[CRYPTO SCREENER] Scan cycle failed: {exc}")
+
+
 async def news_broadcast_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     global _seen_keys
     try:
@@ -3123,6 +3134,9 @@ async def worker_loop() -> None:
     # ── Regular news broadcast & high-impact monitoring ───────────────────────
     jq.run_repeating(news_broadcast_job,      interval=FETCH_INTERVAL_SECONDS,       first=10)
     jq.run_repeating(high_impact_check_job,   interval=HIGH_IMPACT_CHECK_INTERVAL,   first=5)
+
+    # ── Crypto pump screener (every N seconds, configurable) ────────────────────
+    jq.run_repeating(crypto_screener_job,     interval=crypto_screener.CRYPTO_SCAN_INTERVAL, first=30)
 
     # ── AI Agent improvement loop (every 30 min) ─────────────────────────────
     jq.run_repeating(ai_agent_improvement_job, interval=1800, first=60)

@@ -49,7 +49,8 @@ class NewsHelpersTests(unittest.TestCase):
 
         with patch.object(main, "ai_analyze_news", return_value=None), \
              patch.object(main, "_groq_chat", return_value=None), \
-             patch.object(main, "translate_to_bengali", return_value=None):
+             patch.object(main, "translate_to_bengali", return_value=None), \
+             patch.object(main, "fetch_current_prices", return_value={"EUR/USD": 1.0800}):
             message = main.format_forex_message(article)
 
         self.assertIn("TradeSignal Pro", message)
@@ -67,10 +68,11 @@ class NewsHelpersTests(unittest.TestCase):
         }
 
         with patch.object(main, "translate_to_bengali", return_value=None), \
-             patch.object(main, "format_stock_price_info", return_value=None):
+             patch.object(main, "format_stock_price_info", return_value=None), \
+             patch.object(main, "fetch_current_prices", return_value={"NIFTY": 19500.0}):
             message = main.format_india_message(article)
 
-        self.assertIn("INR", message)
+        self.assertIn("NIFTY", message)
         self.assertIn("Analysis:", message)
         self.assertIn("SIGNAL", message)
 
@@ -84,7 +86,8 @@ class NewsHelpersTests(unittest.TestCase):
         }
 
         with patch.object(main, "translate_to_bengali", return_value=None), \
-             patch.object(main, "format_stock_price_info", return_value=None):
+             patch.object(main, "format_stock_price_info", return_value=None), \
+             patch.object(main, "fetch_current_prices", return_value={"RELIANCE": 2800.0}):
             message = main.format_intraday_message(article)
 
         self.assertIn("RELIANCE", message)
@@ -180,7 +183,8 @@ class BilingualAndStockTests(unittest.TestCase):
 
         with patch.object(main, "ai_analyze_news", return_value=None), \
              patch.object(main, "_groq_chat", return_value=None), \
-             patch.object(main, "translate_to_bengali", return_value="মার্কিন ডলার বেড়েছে"):
+             patch.object(main, "translate_to_bengali", return_value="মার্কিন ডলার বেড়েছে"), \
+             patch.object(main, "fetch_current_prices", return_value={"EUR/USD": 1.0800}):
             message = main.format_forex_message(article)
 
         self.assertIn("TradeSignal Pro", message)
@@ -198,7 +202,8 @@ class BilingualAndStockTests(unittest.TestCase):
 
         with patch.object(main, "ai_analyze_news", return_value=None), \
              patch.object(main, "_groq_chat", return_value=None), \
-             patch.object(main, "translate_to_bengali", return_value=None):
+             patch.object(main, "translate_to_bengali", return_value=None), \
+             patch.object(main, "fetch_current_prices", return_value={"EUR/USD": 1.0800}):
             message = main.format_forex_message(article)
 
         self.assertIn("TradeSignal Pro", message)
@@ -214,7 +219,8 @@ class BilingualAndStockTests(unittest.TestCase):
         }
 
         with patch.object(main, "translate_to_bengali", return_value=None), \
-             patch.object(main, "format_stock_price_info", return_value=None):
+             patch.object(main, "format_stock_price_info", return_value=None), \
+             patch.object(main, "fetch_current_prices", return_value={"TCS": 4000.0}):
             message = main.format_intraday_message(article)
 
         self.assertIn("TCS", message)
@@ -234,7 +240,8 @@ class BilingualAndStockTests(unittest.TestCase):
         }
 
         with patch.object(main, "translate_to_bengali", return_value=None), \
-             patch.object(main, "format_stock_price_info", return_value="<b>Live Price:</b> 1800.50 (+15.20 | +0.85%)"):
+             patch.object(main, "format_stock_price_info", return_value="<b>Live Price:</b> 1800.50 (+15.20 | +0.85%)"), \
+             patch.object(main, "fetch_current_prices", return_value={"HDFCBANK": 1800.0}):
             message = main.format_india_message(article)
 
         self.assertIn("Live Price:", message)
@@ -250,13 +257,15 @@ class BilingualAndStockTests(unittest.TestCase):
 
 class AIQuestionTests(unittest.TestCase):
     def test_ai_answer_question_returns_none_without_key(self):
-        with patch.object(main, "GROQ_API_KEY", ""):
+        with patch.object(main, "GROQ_API_KEY", ""), \
+             patch.object(main, "fetch_current_prices", return_value={}):
             result = main.ai_answer_question("Is EUR/USD bullish?")
         self.assertIsNone(result)
 
     def test_ai_answer_question_handles_api_error(self):
         with patch.object(main, "GROQ_API_KEY", "demo-key"), \
-             patch.object(main, "urlopen", side_effect=Exception("API error")):
+             patch.object(main, "urlopen", side_effect=Exception("API error")), \
+             patch.object(main, "fetch_current_prices", return_value={}):
             result = main.ai_answer_question("Is EUR/USD bullish?")
         self.assertIsNone(result)
 
@@ -272,7 +281,9 @@ class AsyncWorkerTests(unittest.IsolatedAsyncioTestCase):
             {"article_id": "2", "title": "Euro climbs on ECB rate hold", "description": "EUR gains", "link": "https://b", "pubDate": recent_date},
         ]
 
-        sent = await main.send_category_article(bot, "@channel", articles, seen_keys, "forex", main.format_forex_message)
+        with patch.object(main, "fetch_current_prices", return_value={"EUR/USD": 1.0800}), \
+             patch.object(main, "TELEGRAM_CHAT_ID", "@channel"):
+            sent = await main.send_category_article(bot, articles, seen_keys, "forex", main.format_forex_message)
 
         self.assertEqual(sent, 1)
         self.assertEqual(bot.send_message.await_count, 1)
@@ -286,7 +297,7 @@ class AsyncWorkerTests(unittest.IsolatedAsyncioTestCase):
             {"article_id": "1", "title": "Dollar rises on Fed optimism", "description": "USD gains", "link": "https://a", "pubDate": recent_date},
         ]
 
-        sent = await main.send_category_article(bot, "@channel", articles, seen_keys, "forex", main.format_forex_message)
+        sent = await main.send_category_article(bot, articles, seen_keys, "forex", main.format_forex_message)
 
         self.assertEqual(sent, 0)
         self.assertEqual(bot.send_message.await_count, 0)
@@ -300,8 +311,10 @@ class AsyncWorkerTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(main, "fetch_latest_articles", return_value=[article]), \
              patch.object(main, "send_options_suggestion", return_value=0), \
-             patch.object(main, "format_market_snapshot_block", return_value=None):
-            sent = await main.run_worker_cycle(bot, "@channel", seen_keys)
+             patch.object(main, "format_market_snapshot_block", return_value=None), \
+             patch.object(main, "fetch_current_prices", return_value={"EUR/USD": 1.0800}), \
+             patch.object(main, "TELEGRAM_CHAT_ID", "@channel"):
+            sent = await main.run_worker_cycle(bot, seen_keys)
 
         self.assertGreaterEqual(sent, 1)
         self.assertGreaterEqual(bot.send_message.await_count, 1)
