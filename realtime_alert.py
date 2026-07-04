@@ -18,6 +18,7 @@ FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "").strip()
 TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 TELEGRAM_BOT_TOKEN3 = os.getenv("BOT_TOKEN3", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_ID3 = os.getenv("TELEGRAM_CHAT_ID3", "").strip()
 
 CRASH_KEYWORDS = [
     "crash", "plunge", "emergency", "recession", "bankrupt", "bankruptcy",
@@ -33,10 +34,13 @@ _india_vix_baseline: float | None = None
 _last_alert_time: dict[str, float] = {}
 
 
-def _send_to_token(token: str, message: str, parse_mode: str = "Markdown") -> bool:
+def _send_to_token(token: str, message: str, parse_mode: str = "Markdown", chat_id: str | None = None) -> bool:
+    cid = chat_id or TELEGRAM_CHAT_ID
+    if not cid:
+        return False
     try:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": parse_mode}
+        payload = {"chat_id": cid, "text": message, "parse_mode": parse_mode}
         resp = requests.post(url, data=payload, timeout=10)
         return resp.ok
     except Exception:
@@ -45,7 +49,7 @@ def _send_to_token(token: str, message: str, parse_mode: str = "Markdown") -> bo
 def send_telegram_alert(message: str, parse_mode: str = "Markdown") -> bool:
     ok = _send_to_token(TELEGRAM_BOT_TOKEN, message, parse_mode)
     if TELEGRAM_BOT_TOKEN3:
-        _send_to_token(TELEGRAM_BOT_TOKEN3, message, parse_mode)
+        _send_to_token(TELEGRAM_BOT_TOKEN3, message, parse_mode, chat_id=TELEGRAM_CHAT_ID3 or TELEGRAM_CHAT_ID)
     return ok
 
 

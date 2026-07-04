@@ -23,6 +23,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BOT_TOKEN2 = os.getenv("BOT_TOKEN2", "").strip()
 BOT_TOKEN3 = os.getenv("BOT_TOKEN3", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_ID3 = os.getenv("TELEGRAM_CHAT_ID3", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
@@ -318,13 +319,14 @@ def send_telegram_bot2(text: str) -> bool:
 
 def send_telegram_bot3(text: str) -> bool:
     """Send via third bot token if available."""
-    if not BOT_TOKEN3 or not TELEGRAM_CHAT_ID:
+    chat_id = TELEGRAM_CHAT_ID3 or TELEGRAM_CHAT_ID
+    if not BOT_TOKEN3 or not chat_id:
         return False
     try:
         import requests
         url = f"https://api.telegram.org/bot{BOT_TOKEN3}/sendMessage"
         payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
+            "chat_id": chat_id,
             "text": text,
             "parse_mode": "Markdown",
             "disable_web_page_preview": True,

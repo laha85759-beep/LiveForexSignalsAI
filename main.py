@@ -22,6 +22,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BOT_TOKEN2 = os.getenv("BOT_TOKEN2", "").strip()
 BOT_TOKEN3 = os.getenv("BOT_TOKEN3", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_ID3 = os.getenv("TELEGRAM_CHAT_ID3", "").strip()
 NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY", "").strip()
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
@@ -2556,8 +2557,11 @@ async def broadcast(bot: Bot, text: str, parse_mode: str = "Markdown", disable_w
         bots.append(bot3)
 
     for b in bots:
+        bot_targets = targets
+        if bot3 and b is bot3 and TELEGRAM_CHAT_ID3:
+            bot_targets = [TELEGRAM_CHAT_ID3]
         seen_cids: set[int | str] = set()
-        for cid in targets:
+        for cid in bot_targets:
             if cid in seen_cids:
                 continue
             seen_cids.add(cid)
