@@ -2136,6 +2136,38 @@ def _finnhub_sentiment_line(asset: str) -> str:
     return ""
 
 
+# ── Daily Style Theme System ─────────────────────────────────────────────
+_WEEKLY_THEMES = [
+    {"header": "🚀", "accent": "⚡", "sep": "▬" * 20, "name": "Monday Momentum"},
+    {"header": "🔥", "accent": "💥", "sep": "═" * 20, "name": "Tuesday Trade"},
+    {"header": "🎯", "accent": "📊", "sep": "▔" * 20, "name": "Wednesday Watch"},
+    {"header": "💎", "accent": "🌟", "sep": "✦" * 20, "name": "Thursday Signals"},
+    {"header": "🏆", "accent": "💰", "sep": "▬" * 20, "name": "Friday Forecast"},
+    {"header": "📡", "accent": "📈", "sep": "─" * 20, "name": "Saturday Scan"},
+    {"header": "🌐", "accent": "🔮", "sep": "━" * 20, "name": "Sunday Summary"},
+]
+_style_counter: dict[str, int] = {"day": -1}
+
+
+def _get_today_theme() -> dict:
+    today = datetime.now(timezone.utc).weekday()
+    if _style_counter["day"] != today:
+        _style_counter["day"] = today
+    return _WEEKLY_THEMES[today]
+
+
+def _style_header(title: str, theme: dict) -> str:
+    return f"{theme['header']} *{title}*  {theme['header']}"
+
+
+def _style_sep(theme: dict) -> str:
+    return theme["sep"]
+
+
+def _style_label(k: str, v: str, w: int = 14) -> str:
+    return f"`{k:<{w}}` {v}"
+
+
 def format_forex_message(article: dict[str, Any]) -> str:
     """Template 1 — Forex/Crypto trade signal or news alert."""
     title     = _strip_md(article.get("title") or "Market Update")
@@ -2176,42 +2208,46 @@ def format_forex_message(article: dict[str, Any]) -> str:
                 ai_reason = _strip_md(ai_analyze_news(article) or title[:200])
                 inst_name = INSTRUMENT_NAMES.get(pair, pair)
                 log_signal(pair, direction_label, e, t1, t2, s, "forex")
+                theme = _get_today_theme()
+                sep = _style_sep(theme)
                 lines = [
-                    f"📡 *TradeSignal Pro*  |  AI Signal",
+                    _style_header(f"TradeSignal Pro — {dir_icon}", theme),
                     f"",
-                    f"*{pair}*  ·  {dir_icon}  ·  H1",
-                    f"_{inst_name}_",
+                    f"`Asset      ` *{pair}*   _{inst_name}_",
+                    f"`Timeframe  ` H1  ·  {theme['accent']} {theme['name']}",
                     f"",
-                    f"━━━━━━━━━━━━━━━━━━",
-                    f"📌 Entry:        {_price_str(e,  pair)}",
-                    f"🛑 Stop Loss:    {_price_str(s,  pair)}  (-{_price_str(abs(s-e),  pair)})",
-                    f"🎯 TP 1:         {_price_str(t1, pair)}  (+{_price_str(abs(t1-e), pair)})",
-                    f"🎯 TP 2:         {_price_str(t2, pair)}  (+{_price_str(abs(t2-e), pair)})",
-                    f"⚖️ Risk:Reward:  1 : {rr_str}",
-                    f"━━━━━━━━━━━━━━━━━━",
-                    f"🤖 AI Confidence: {conf_pct}%",
-                    f"📝 {ai_reason[:250]}",
+                    f"`{sep}`",
+                    _style_label("Entry",      _price_str(e, pair)),
+                    _style_label("Stop Loss",  f"{_price_str(s, pair)}  ({-_price_str(abs(s-e), pair)})"),
+                    _style_label("TP 1",       f"{_price_str(t1, pair)}  (+{_price_str(abs(t1-e), pair)})"),
+                    _style_label("TP 2",       f"{_price_str(t2, pair)}  (+{_price_str(abs(t2-e), pair)})"),
+                    _style_label("Risk:Reward", f"1 : {rr_str}"),
+                    f"`{sep}`",
+                    _style_label("AI Confidence", f"{conf_pct}%"),
+                    f"",
+                    f"📝 {ai_reason[:280]}",
                     f"",
                     _finnhub_sentiment_line(asset).replace("*", ""),
                     f"",
-                    f"━━━━━━━━━━━━━━━━━━",
-                    f"🧠 *AI Learning Assistant* — _Tailored for your level_",
+                    f"`{sep}`",
+                    f"🧠 *AI Learning Assistant*",
                     f"",
                     f"📘 *Beginner:* {dir_icon} means we expect {pair} to {'rise' if is_buy else 'fall'}. "
-                    f"Entry at {_price_str(e, pair)} is where the trade opens. "
-                    f"SL ({_price_str(s, pair)}) limits losses. TP targets lock in profits.",
+                    f"Entry at {_price_str(e, pair)} opens the trade. "
+                    f"SL ({_price_str(s, pair)}) caps losses. TP1/TP2 lock profits.",
                     f"",
-                    f"📙 *Intermediate:* Price at {_price_str(e, pair)} with "
-                    f"{'bullish' if is_buy else 'bearish'} bias from news. "
-                    f"Risk ${abs(s-e):.2f} to target ${abs(t1-e):.2f} (TP1) / ${abs(t2-e):.2f} (TP2). "
-                    f"R:R of 1:{rr_str} offers favorable risk-to-reward.",
+                    f"📙 *Intermediate:* Price {_price_str(e, pair)} with "
+                    f"{'bullish' if is_buy else 'bearish'} news bias. "
+                    f"Risk {_price_str(abs(s-e), pair)} to target "
+                    f"{_price_str(abs(t1-e), pair)} (TP1) / {_price_str(abs(t2-e), pair)} (TP2). "
+                    f"R:R 1:{rr_str}.",
                     f"",
-                    f"📈 *Experienced:* Watch for {'resistance' if is_buy else 'support'} near "
-                    f"{_price_str(t1, pair)}. Momentum confirmation on breakout. "
-                    f"Consider partial exits at TP1, trailing SL to breakeven after TP1 hit.",
+                    f"📈 *Experienced:* {'Resistance' if not is_buy else 'Support'} cluster near "
+                    f"{_price_str(t1, pair)}. Watch for volume confirmation. "
+                    f"Scale 50% at TP1, trail SL to entry.",
                     f"",
                     f"🔖 #{asset_sym}  #forex  #signal  #{'long' if is_buy else 'short'}",
-                    f"⚠️ _Not financial advice. Trade at your own risk._",
+                    f"⚠️ _Not financial advice._",
                 ]
                 if link:
                     lines.append(f"🔗 {link}")
@@ -2226,17 +2262,19 @@ def format_forex_message(article: dict[str, Any]) -> str:
     )
     conf_pct_fb = _confidence_pct(confidence)
     ist_str = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%d %b %Y")
+    theme = _get_today_theme()
+    sep = _style_sep(theme)
     lines = [
-        f"📰 *FOREX/MARKET UPDATE*",
-        f"━━━━━━━━━━━━━━━━━━",
+        _style_header(f"Forex / Market Update", theme),
+        f"`{sep}`",
         f"*{title[:80]}*",
-        f"🌍 *Asset:* {asset}  ·  {ist_str}",
         f"",
-        f"━━━━━━━━━━━━━━━━━━",
-        f"💥 *Impact:* {dir_icon_fb} for *{asset}*",
-        f"🤖 *Confidence:* {conf_pct_fb}%",
-        f"━━━━━━━━━━━━━━━━━━",
-        f"⚡ *Analysis:*",
+        _style_label("Asset",   asset),
+        _style_label("Date",    ist_str),
+        _style_label("Impact",  dir_icon_fb),
+        _style_label("AI Conf.", f"{conf_pct_fb}%"),
+        f"`{sep}`",
+        f"📊 *Analysis:*",
         f"{ai_analysis[:350]}",
         f"",
         _finnhub_sentiment_line(asset),
@@ -2301,11 +2339,13 @@ def format_india_message(article: dict[str, Any]) -> str:
             log_signal(pair, "BUY" if is_buy else "SELL", e, t1, t2, s, "india")
 
     live_price = format_stock_price_info(asset)
+    theme = _get_today_theme()
+    sep = _style_sep(theme)
     lines = [
-        f"🇮🇳 *NSE / BSE SIGNAL*",
-        f"━━━━━━━━━━━━━━━━━━",
-        f"*{asset}*  ·  {inst_name}  |  {dir_icon}",
-        f"_{title[:80]}_",
+        _style_header(f"NSE / BSE Signal — {dir_icon}", theme),
+        f"`{sep}`",
+        f"`Asset      ` *{asset}*  ·  {inst_name}",
+        f"`{theme['name']}` _{title[:80]}_",
         f"",
     ]
     if live_price:
@@ -2319,50 +2359,50 @@ def format_india_message(article: dict[str, Any]) -> str:
             pct_sl = abs(s - e) / e * 100
             rr = abs(t2 - e) / abs(s - e) if abs(s - e) > 0 else 0
             lines.extend([
-                f"━━━━━━━━━━━━━━━━━━",
-                f"📌 Entry:       {entry_str}",
-                f"🛑 Stop Loss:   {sl_str}  (-{pct_sl:.1f}%)",
-                f"🎯 TP 1:        {tp1_str}  (+{pct_tp1:.1f}%)",
-                f"🎯 TP 2:        {tp2_str}  (+{pct_tp2:.1f}%)",
-                f"⚖️ R:R:         1:{rr:.1f}",
-                f"🤖 Confidence:  {conf_pct}%",
-                f"━━━━━━━━━━━━━━━━━━",
+                f"`{sep}`",
+                _style_label("Entry",      entry_str),
+                _style_label("Stop Loss",  f"{sl_str}  (-{pct_sl:.1f}%)"),
+                _style_label("TP 1",       f"{tp1_str}  (+{pct_tp1:.1f}%)"),
+                _style_label("TP 2",       f"{tp2_str}  (+{pct_tp2:.1f}%)"),
+                _style_label("R:R",        f"1:{rr:.1f}"),
+                _style_label("AI Confidence", f"{conf_pct}%"),
+                f"`{sep}`",
                 f"📊 *Analysis:* {ai_insight[:300]}",
                 f"",
-                f"━━━━━━━━━━━━━━━━━━",
-                f"🧠 *AI Learning Assistant* — _Tailored for your level_",
+                f"`{sep}`",
+                f"🧠 *AI Learning Assistant*",
                 f"",
                 f"📘 *Beginner:* {entry_icon} means we expect the price to {'rise' if is_buy else 'fall'}. "
-                f"Entry at {entry_str}, stop-loss at {sl_str} limits risk, "
-                f"targets at {tp1_str} and {tp2_str} lock in profits.",
+                f"Entry {entry_str}, SL {sl_str} limits risk, "
+                f"TP1 {tp1_str} / TP2 {tp2_str} lock profits.",
                 f"",
-                f"📙 *Intermediate:* {'Bullish' if is_buy else 'Bearish'} bias from news. "
-                f"Entry at {entry_str} with {pct_sl:.1f}% risk for {pct_tp2:.1f}% reward (R:R 1:{rr:.1f}). "
-                f"Consider scaling out 50% at TP1, trailing SL to entry after TP1 hit.",
+                f"📙 *Intermediate:* {'Bullish' if is_buy else 'Bearish'} news bias. "
+                f"Entry {entry_str}, {pct_sl:.1f}% risk for {pct_tp2:.1f}% reward (R:R 1:{rr:.1f}). "
+                f"Scale 50% at TP1, trail SL to entry.",
                 f"",
                 f"📈 *Experienced:* Key level at {entry_str}. "
-                f"{'Resistance' if not is_buy else 'Support'} cluster near {tp1_str}. "
-                f"Volume confirmation needed. Monitor {asset} for liquidity shifts.",
+                f"{'Resistance' if not is_buy else 'Support'} near {tp1_str}. "
+                f"Volume confirmation needed.",
                 f"",
                 f"🔖 #{asset}  #NSE  #BSE  #India  #{'long' if is_buy else 'short'}",
-                f"⚠️ _Not financial advice. Trade at your own risk._",
+                f"⚠️ _Not financial advice._",
             ])
         else:
             lines.extend([
-                f"━━━━━━━━━━━━━━━━━━",
-                f"📌 Entry zone:   {entry_str}",
-                f"🛑 Stop loss:    {sl_str}" + (f"  (-{sl_diff})" if sl_diff else ""),
-                f"🎯 Target 1:     {tp1_str}" + (f"  (+{tp1_diff})" if tp1_diff else ""),
-                f"🎯 Target 2:     {tp2_str}" + (f"  (+{tp2_diff})" if tp2_diff else ""),
-                f"🤖 Confidence:   {conf_pct}%",
-                f"━━━━━━━━━━━━━━━━━━",
+                f"`{sep}`",
+                _style_label("Entry zone", entry_str),
+                _style_label("Stop loss",  sl_str + (f"  (-{sl_diff})" if sl_diff else "")),
+                _style_label("Target 1",   tp1_str + (f"  (+{tp1_diff})" if tp1_diff else "")),
+                _style_label("Target 2",   tp2_str + (f"  (+{tp2_diff})" if tp2_diff else "")),
+                _style_label("Confidence", f"{conf_pct}%"),
+                f"`{sep}`",
                 f"📊 *Analysis:* {ai_insight[:300]}",
                 f"",
                 f"🔖 #{asset}  #NSE  #BSE  #India  #news",
             ])
     else:
         lines.extend([
-            f"━━━━━━━━━━━━━━━━━━",
+            f"`{sep}`",
             f"📊 *Analysis:* {ai_insight[:300]}",
             f"",
             f"🔖 #{asset}  #NSE  #BSE  #India  #news",
@@ -2446,11 +2486,13 @@ def format_intraday_message(article: dict[str, Any]) -> str:
             log_signal(pair, "BUY" if is_buy else "SELL", e, t1, t2, s, "intraday")
 
     live_price = format_stock_price_info(asset)
+    theme = _get_today_theme()
+    sep = _style_sep(theme)
     lines = [
-        f"📈 *INTRADAY SIGNAL*  ·  {exchange_tag}",
-        f"━━━━━━━━━━━━━━━━━━",
-        f"*{asset}*  ·  {inst_name}  |  {dir_icon}",
-        f"_{title[:80]}_",
+        _style_header(f"Intraday Signal — {exchange_tag}", theme),
+        f"`{sep}`",
+        f"`Asset      ` *{asset}*  ·  {inst_name}  |  {dir_icon}",
+        f"`{theme['name']}` _{title[:80]}_",
         f"",
     ]
     if live_price:
@@ -2464,50 +2506,50 @@ def format_intraday_message(article: dict[str, Any]) -> str:
             pct_sl = abs(s - e) / e * 100
             rr = abs(t2 - e) / abs(s - e) if abs(s - e) > 0 else 0
             lines.extend([
-                f"━━━━━━━━━━━━━━━━━━",
-                f"📌 Entry:       {entry_str}",
-                f"🛑 Stop Loss:   {sl_str}  (-{pct_sl:.1f}%)",
-                f"🎯 TP 1:        {tp1_str}  (+{pct_tp1:.1f}%)",
-                f"🎯 TP 2:        {tp2_str}  (+{pct_tp2:.1f}%)",
-                f"⚖️ R:R:         1:{rr:.1f}",
-                f"🤖 Confidence:  {conf_pct}%",
-                f"━━━━━━━━━━━━━━━━━━",
+                f"`{sep}`",
+                _style_label("Entry",      entry_str),
+                _style_label("Stop Loss",  f"{sl_str}  (-{pct_sl:.1f}%)"),
+                _style_label("TP 1",       f"{tp1_str}  (+{pct_tp1:.1f}%)"),
+                _style_label("TP 2",       f"{tp2_str}  (+{pct_tp2:.1f}%)"),
+                _style_label("R:R",        f"1:{rr:.1f}"),
+                _style_label("AI Confidence", f"{conf_pct}%"),
+                f"`{sep}`",
                 f"📊 *Analysis:* {ai_insight[:300]}",
                 f"",
-                f"━━━━━━━━━━━━━━━━━━",
-                f"🧠 *AI Learning Assistant* — _Tailored for your level_",
+                f"`{sep}`",
+                f"🧠 *AI Learning Assistant*",
                 f"",
                 f"📘 *Beginner:* {entry_icon} means we expect the stock to {'rise' if is_buy else 'fall'}. "
-                f"Entry at {entry_str}, stop-loss at {sl_str} to limit losses, "
-                f"targets at {tp1_str} (TP1) and {tp2_str} (TP2) for profit taking.",
+                f"Entry {entry_str}, SL {sl_str} limits losses, "
+                f"TP1 {tp1_str} / TP2 {tp2_str} for profit taking.",
                 f"",
-                f"📙 *Intermediate:* {'Bullish' if is_buy else 'Bearish'} bias on {asset} from news. "
-                f"Entry {entry_str} with {pct_sl:.1f}% risk for {pct_tp2:.1f}% potential (R:R 1:{rr:.1f}). "
+                f"📙 *Intermediate:* {'Bullish' if is_buy else 'Bearish'} bias on {asset}. "
+                f"Entry {entry_str}, {pct_sl:.1f}% risk for {pct_tp2:.1f}% reward (R:R 1:{rr:.1f}). "
                 f"Book 50% at TP1, trail SL to breakeven.",
                 f"",
-                f"📈 *Experienced:* Watch price action at {entry_str}. "
+                f"📈 *Experienced:* Price action at {entry_str}. "
                 f"{'Resistance' if not is_buy else 'Support'} near {tp1_str}. "
-                f"Look for volume confirmation. Manage position size based on volatility.",
+                f"Volume confirmation key. Size based on volatility.",
                 f"",
                 f"🔖 #{asset}  #intraday  #{exchange_tag}  #{'long' if is_buy else 'short'}",
-                f"⚠️ _Not financial advice. Trade at your own risk._",
+                f"⚠️ _Not financial advice._",
             ])
         else:
             lines.extend([
-                f"━━━━━━━━━━━━━━━━━━",
-                f"📌 Entry zone:   {entry_str}",
-                f"🛑 Stop loss:    {sl_str}" + (f"  (-{sl_diff})" if sl_diff else ""),
-                f"🎯 Target 1:     {tp1_str}" + (f"  (+{tp1_diff})" if tp1_diff else ""),
-                f"🎯 Target 2:     {tp2_str}" + (f"  (+{tp2_diff})" if tp2_diff else ""),
-                f"🤖 Confidence:   {conf_pct}%",
-                f"━━━━━━━━━━━━━━━━━━",
+                f"`{sep}`",
+                _style_label("Entry zone", entry_str),
+                _style_label("Stop loss",  sl_str + (f"  (-{sl_diff})" if sl_diff else "")),
+                _style_label("Target 1",   tp1_str + (f"  (+{tp1_diff})" if tp1_diff else "")),
+                _style_label("Target 2",   tp2_str + (f"  (+{tp2_diff})" if tp2_diff else "")),
+                _style_label("Confidence", f"{conf_pct}%"),
+                f"`{sep}`",
                 f"📊 *Analysis:* {ai_insight[:300]}",
                 f"",
                 f"🔖 #{asset}  #intraday  #{exchange_tag}  #India",
             ])
     else:
         lines.extend([
-            f"━━━━━━━━━━━━━━━━━━",
+            f"`{sep}`",
             f"📊 *Analysis:* {ai_insight[:300]}",
             f"",
             f"🔖 #{asset}  #intraday  #{exchange_tag}  #India",

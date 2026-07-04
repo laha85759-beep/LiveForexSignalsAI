@@ -260,15 +260,19 @@ def analyze_recent_signals_for_improvement(signal_log: list[dict]) -> str | None
         )
     summary = "\n".join(summary_lines)
 
+    from datetime import datetime, timezone, timedelta
+    today_name = datetime.now(timezone.utc).strftime("%A")
     prompt = (
         "You are an AI trading system optimizer. Review these recent trade signals:\n\n"
         f"{summary}\n\n"
-        "Analyze:\n"
+        f"Today is {today_name}. Analyze:\n"
         "1. Are the TP/SL levels appropriately placed?\n"
         "2. Is there good variety across assets (forex, crypto, stocks)?\n"
         "3. Are BTC signals frequent enough?\n"
         "4. How can the signal quality be improved?\n"
-        "5. What educational content would help traders most right now?\n\n"
+        "5. Suggest ONE creative improvement to the Telegram message format/style/design "
+        "(emoji usage, layout, structure, colors via unicode, etc.) to make it more "
+        "engaging and professional. Be specific.\n\n"
         "Provide 3-4 specific, actionable suggestions. Be concise."
     )
     return _best_ai(prompt, "You are an expert trading system architect.")
