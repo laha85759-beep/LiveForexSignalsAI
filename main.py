@@ -20,6 +20,7 @@ import crypto_screener
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BOT_TOKEN2 = os.getenv("BOT_TOKEN2", "").strip()
+BOT_TOKEN3 = os.getenv("BOT_TOKEN3", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY", "").strip()
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "").strip()
@@ -2516,6 +2517,7 @@ def format_intraday_message(article: dict[str, Any]) -> str:
 
 
 _bot2_instance: Bot | None = None
+_bot3_instance: Bot | None = None
 
 
 def _init_bot2() -> Bot | None:
@@ -2526,6 +2528,16 @@ def _init_bot2() -> Bot | None:
         _bot2_instance = Bot(BOT_TOKEN2)
         print("[BOT2] Second bot initialized")
     return _bot2_instance
+
+
+def _init_bot3() -> Bot | None:
+    global _bot3_instance
+    if _bot3_instance is not None:
+        return _bot3_instance
+    if BOT_TOKEN3:
+        _bot3_instance = Bot(BOT_TOKEN3)
+        print("[BOT3] Third bot initialized")
+    return _bot3_instance
 
 
 async def broadcast(bot: Bot, text: str, parse_mode: str = "Markdown", disable_web_page_preview: bool = True) -> int:
@@ -2539,6 +2551,9 @@ async def broadcast(bot: Bot, text: str, parse_mode: str = "Markdown", disable_w
     bot2 = _init_bot2()
     if bot2:
         bots.append(bot2)
+    bot3 = _init_bot3()
+    if bot3:
+        bots.append(bot3)
 
     for b in bots:
         seen_cids: set[int | str] = set()
@@ -2562,7 +2577,7 @@ async def broadcast(bot: Bot, text: str, parse_mode: str = "Markdown", disable_w
                         save_subscribers(_subscribers)
                         print(f"[BROADCAST] Removed blocked/subscriber {cid}")
                 else:
-                    label = "bot2" if bot2 and b is bot2 else "bot1"
+                    label = "bot3" if bot3 and b is bot3 else "bot2" if bot2 and b is bot2 else "bot1"
                     print(f"[BROADCAST] Failed to send via {label} to {cid}: {exc}")
     return sent
 
@@ -3124,6 +3139,18 @@ async def worker_loop() -> None:
 
     jq = app.job_queue
 
+    # ── Second bot polling (BOT_TOKEN3) ─────────────────────────────────────
+    app3: Application | None = None
+    if BOT_TOKEN3:
+        app3 = Application.builder().token(BOT_TOKEN3).build()
+        app3.add_handler(CommandHandler("start",  start_command))
+        app3.add_handler(CommandHandler("help",   help_command))
+        app3.add_handler(CommandHandler("subscribe", subscribe_command))
+        app3.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
+        app3.add_handler(CommandHandler("status", status_command))
+        app3.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question))
+        print("[BOT3] Third bot polling enabled")
+
     # ── Start Finnhub WebSocket listener in background ────────────────────────
     try:
         realtime_alert.start_websocket_thread()
@@ -3163,7 +3190,14 @@ async def worker_loop() -> None:
     jq.run_daily(_ny_close_job,         time=time(hour=19, minute=0),  name="ny_close")
 
     print("All jobs scheduled. Listening for user questions...")
-    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+    if app3:
+        await asyncio.gather(
+            app.run_polling(allowed_updates=Update.ALL_TYPES),
+            app3.run_polling(allowed_updates=Update.ALL_TYPES),
+        )
+    else:
+        await app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 def main() -> int:
