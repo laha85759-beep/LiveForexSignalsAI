@@ -352,6 +352,45 @@ def generate_btc_market_update(prices: dict | None = None) -> str | None:
     return _best_ai(prompt, "You are a professional crypto market analyst.")
 
 
+def build_premium_btc_card(signal: str, price: float | None, news_items: list[str], trade_setup: str, risk_note: str) -> str:
+    """Build a premium-looking BTC Telegram card for live broadcasts."""
+    headline_block = "\n".join(f"• {item[:110]}" for item in news_items[:3]) if news_items else "• No fresh BTC headlines detected"
+    price_line = f"${price:,.2f}" if price is not None else "Live"
+    return "\n".join([
+        "₿ BTC/USD — News-Backed BTC Trade Insight",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🟢 Signal: {signal}",
+        f"💰 Price: {price_line}",
+        "",
+        "🎯 Trade Setup",
+        trade_setup or "Monitor structure and wait for confirmation.",
+        "",
+        "🛡️ Risk Control",
+        risk_note or "Risk 1-2% and scale only after confirmation.",
+        "",
+        "📰 Verified news",
+        headline_block,
+        "",
+        "⚠️ Not financial advice. Trade at your own risk.",
+    ])
+
+
+def merge_news_streams(feed_items: list[dict], twitter_items: list[dict]) -> list[str]:
+    """Merge feed and Twitter headlines while deduplicating similar entries."""
+    seen: set[str] = set()
+    merged: list[str] = []
+    for item in feed_items + twitter_items:
+        text = (item.get("title") or item.get("text") or "").strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(text)
+    return merged[:5]
+
+
 def format_btc_market_update(ai_output: str, btc_price: float | None = None) -> str | None:
     """Format BTC market update into a Telegram message with a news-backed structure."""
     if not ai_output:
@@ -389,6 +428,15 @@ def format_btc_market_update(ai_output: str, btc_price: float | None = None) -> 
 
     if not signal and not analysis:
         return None
+
+    if trade_setup or risk_note or news_items:
+        return build_premium_btc_card(
+            signal=signal or "Neutral",
+            price=btc_price,
+            news_items=news_items,
+            trade_setup=trade_setup or f"Key level: {key_level or 'monitor'}",
+            risk_note=risk_note or "Risk 1-2% and scale only after confirmation.",
+        )
 
     signal_icon = {
         "BULLISH": "🟢",
