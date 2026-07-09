@@ -2,6 +2,7 @@ import inspect
 import unittest
 from unittest.mock import AsyncMock, patch
 
+import ai_agent
 import main
 
 
@@ -190,6 +191,24 @@ class NewsHelpersTests(unittest.TestCase):
         self.assertEqual(len(articles), 2)
         self.assertEqual(articles[0]["source_name"], "Reuters")
         self.assertIn("Fed holds rates", articles[0]["title"])
+
+
+class AiAgentTests(unittest.TestCase):
+    def test_format_btc_market_update_uses_news_backed_heading(self):
+        message = ai_agent.format_btc_market_update(
+            "SIGNAL|BULLISH\n"
+            "ANALYSIS|Bitcoin strengthened after ETF inflows and regulatory relief.\n"
+            "KEY_LEVEL|$62,000\n"
+            "NEWS|• ETF inflows remain strong\n"
+            "• Regulatory headlines stay constructive\n"
+            "• Macro data supports risk appetite",
+            btc_price=62000.0,
+        )
+
+        self.assertIsNotNone(message)
+        self.assertIn("News-Backed BTC Trade Insight", message)
+        self.assertNotIn("AI Market Update", message)
+        self.assertIn("Verified news", message)
 
 
 class BilingualAndStockTests(unittest.TestCase):

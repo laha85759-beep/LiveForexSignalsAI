@@ -147,16 +147,48 @@ def enhance_forex_message_with_ai(original_message: str, pair: str, direction: s
     return original_message
 
 
+def _extract_news_context(news_items: list[dict] | None = None) -> str:
+    """Turn recent news items into a compact BTC/crypto news context block."""
+    if not news_items:
+        return ""
+    snippets: list[str] = []
+    for item in news_items[:4]:
+        title = (item.get("title") or item.get("headline") or item.get("name") or "").strip()
+        if title:
+            snippets.append(title[:140])
+    if not snippets:
+        return ""
+    return "Recent BTC/crypto news context:\n" + "\n".join(f"- {s}" for s in snippets)
+
+
 def generate_btc_trade_suggestion(current_price: float | None = None) -> str | None:
-    """Generate a standalone BTC/USD trade suggestion using AI."""
+    """Generate a standalone BTC/USD trade suggestion using AI and news context."""
     price_context = ""
     if current_price:
         price_context = f"Current BTC/USD price: ${current_price:,.2f}"
 
+    news_context = ""
+    try:
+        import main
+        articles = main.fetch_latest_articles("Bitcoin crypto ETF regulation")
+        btc_news = []
+        for article in articles[:8]:
+            title = (article.get("title") or article.get("headline") or "").strip()
+            if title:
+                text = f"{title} {article.get('description') or ''}".lower()
+                if any(k in text for k in ["bitcoin", "btc", "crypto", "etf", "regulation", "inflation", "fed"]):
+                    btc_news.append(article)
+            if len(btc_news) >= 3:
+                break
+        news_context = _extract_news_context(btc_news)
+    except Exception:
+        news_context = ""
+
     prompt = (
-        "You are a crypto trading analyst. Generate a BTC/USD trade suggestion.\n\n"
+        "You are a crypto trading analyst. Generate a BTC/USD trade suggestion grounded in recent verified news and price action.\n\n"
         f"{price_context}\n\n"
-        "Based on recent Bitcoin market conditions, provide:\n"
+        f"{news_context}\n\n"
+        "Based on recent Bitcoin market conditions and the supplied news context, provide:\n"
         "1. Direction (LONG or SHORT)\n"
         "2. Rationale (1 sentence)\n"
         "3. Key support and resistance levels\n"
@@ -167,7 +199,7 @@ def generate_btc_trade_suggestion(current_price: float | None = None) -> str | N
         "SUPPORT: <level>\n"
         "RESISTANCE: <level>\n"
         "ADVICE: <1 sentence>\n\n"
-        "Be factual and data-driven. Never give financial advice."
+        "Be factual, evidence-based, and concise. Never give financial advice."
     )
     result = _best_ai(prompt, "You are a professional crypto trading analyst.")
     if not result:
@@ -182,17 +214,16 @@ def format_btc_signal_block(ai_suggestion: str, price: float | None = None) -> s
         price_line = f"💰 *Live Price:* ${price:,.2f}\n"
 
     lines = [
-        "₿ *BTC/USD CRYPTO SIGNAL*",
+        "₿ *BTC/USD — News-Backed Trade Idea*",
         "━━━━━━━━━━━━━━━━━━",
         f"{price_line}",
-        f"🤖 *AI Analysis:*\n{ai_suggestion}",
+        f"📰 *Trade view:*\n{ai_suggestion}",
         "",
         "📘 *Beginner Note:* Bitcoin trades 24/7 on crypto exchanges. "
-        "A LONG position means you buy expecting the price to rise. "
-        "Always use stop-losses to protect your capital.",
+        "A LONG trade means you expect the price to rise; use a stop-loss to protect risk.",
         "",
         "━━━━━━━━━━━━━━━━━━",
-        "🔖 #BTC  #crypto  #Bitcoin  #signal",
+        "🔖 #BTC  #crypto  #Bitcoin  #newsbacked",
         "⚠️ _Not financial advice. Trade at your own risk._",
     ]
     return "\n".join(lines)
@@ -279,7 +310,7 @@ def analyze_recent_signals_for_improvement(signal_log: list[dict]) -> str | None
 
 
 def generate_btc_market_update(prices: dict | None = None) -> str | None:
-    """Generate a dedicated BTC market update with multi-level education."""
+    """Generate a dedicated BTC market update with verified-news-backed guidance."""
     btc_price = None
     if prices:
         btc_price = prices.get("BTC/USD")
@@ -288,24 +319,41 @@ def generate_btc_market_update(prices: dict | None = None) -> str | None:
     if btc_price:
         price_ctx = f"Bitcoin is currently at ${btc_price:,.2f}."
 
+    news_context = ""
+    try:
+        import main
+        articles = main.fetch_latest_articles("Bitcoin crypto ETF regulation")
+        btc_news = []
+        for article in articles[:8]:
+            title = (article.get("title") or article.get("headline") or "").strip()
+            if title:
+                text = f"{title} {article.get('description') or ''}".lower()
+                if any(k in text for k in ["bitcoin", "btc", "crypto", "etf", "regulation", "inflation", "fed"]):
+                    btc_news.append(article)
+            if len(btc_news) >= 3:
+                break
+        news_context = _extract_news_context(btc_news)
+    except Exception:
+        news_context = ""
+
     prompt = (
-        "You are a crypto market analyst. Generate a Bitcoin market update.\n\n"
+        "You are a crypto market analyst. Generate a Bitcoin market update that is grounded in recent verified BTC/crypto news rather than generic hype.\n\n"
         f"{price_ctx}\n\n"
+        f"{news_context}\n\n"
         "Structure your response EXACTLY like this:\n"
         "SIGNAL|<direction (BULLISH/BEARISH/NEUTRAL)>\n"
-        "ANALYSIS|<1-2 sentences on market conditions>\n"
+        "ANALYSIS|<1-2 sentences on market conditions with evidence from recent news>\n"
         "KEY_LEVEL|<key price level to watch>\n"
-        "BTC_DOMINANCE|<mention if relevant>\n"
-        "BEGINNER|<simple explanation for new traders>\n"
-        "INTERMEDIATE|<technical context>\n"
-        "EXPERIENCED|<advanced insight>\n\n"
-        "Be factual and data-driven."
+        "NEWS|<3 short bullet-style points that mention concrete recent news cues>\n"
+        "TRADE|<one-sentence trade setup with entry/target/risk logic>\n"
+        "RISK|<one sentence on risk management>\n\n"
+        "Be factual, evidence-based, and concise."
     )
     return _best_ai(prompt, "You are a professional crypto market analyst.")
 
 
 def format_btc_market_update(ai_output: str, btc_price: float | None = None) -> str | None:
-    """Format BTC market update into a Telegram message."""
+    """Format BTC market update into a Telegram message with a news-backed structure."""
     if not ai_output:
         return None
 
@@ -313,9 +361,9 @@ def format_btc_market_update(ai_output: str, btc_price: float | None = None) -> 
     signal = ""
     analysis = ""
     key_level = ""
-    beginner = ""
-    intermediate = ""
-    experienced = ""
+    news_items: list[str] = []
+    trade_setup = ""
+    risk_note = ""
 
     for line in lines:
         line = line.strip()
@@ -325,12 +373,15 @@ def format_btc_market_update(ai_output: str, btc_price: float | None = None) -> 
             analysis = line.split("|", 1)[-1].strip()
         elif line.upper().startswith("KEY_LEVEL|"):
             key_level = line.split("|", 1)[-1].strip()
-        elif line.upper().startswith("BEGINNER|"):
-            beginner = line.split("|", 1)[-1].strip()
-        elif line.upper().startswith("INTERMEDIATE|"):
-            intermediate = line.split("|", 1)[-1].strip()
-        elif line.upper().startswith("EXPERIENCED|"):
-            experienced = line.split("|", 1)[-1].strip()
+        elif line.upper().startswith("NEWS|"):
+            raw = line.split("|", 1)[-1].strip()
+            if raw:
+                parts = [p.strip(" •-") for p in raw.replace("•", "\n").split("\n") if p.strip(" •-")]
+                news_items.extend(parts)
+        elif line.upper().startswith("TRADE|"):
+            trade_setup = line.split("|", 1)[-1].strip()
+        elif line.upper().startswith("RISK|"):
+            risk_note = line.split("|", 1)[-1].strip()
 
     if not signal and not analysis:
         return None
@@ -346,7 +397,7 @@ def format_btc_market_update(ai_output: str, btc_price: float | None = None) -> 
         price_line = f"💰 *Price:* ${btc_price:,.2f}"
 
     parts = [
-        "₿ *BTC/USD — AI Market Update*",
+        "₿ *BTC/USD — News-Backed BTC Trade Insight*",
         "━━━━━━━━━━━━━━━━━━",
     ]
     if signal:
@@ -357,20 +408,18 @@ def format_btc_market_update(ai_output: str, btc_price: float | None = None) -> 
         parts.append(f"\n📊 *Analysis:* {analysis}")
     if key_level:
         parts.append(f"🎯 *Key Level:* {key_level}")
-
-    parts.append("\n━━━━━━━━━━━━━━━━━━")
-    parts.append("🧠 *AI Learning Assistant*")
-
-    if beginner:
-        parts.append(f"\n📘 *For Beginners:* {beginner}")
-    if intermediate:
-        parts.append(f"📙 *For Intermediate:* {intermediate}")
-    if experienced:
-        parts.append(f"📈 *For Experienced:* {experienced}")
+    if trade_setup:
+        parts.append(f"\n🎯 *Trade Setup:* {trade_setup}")
+    if risk_note:
+        parts.append(f"🛡️ *Risk:* {risk_note}")
+    if news_items:
+        parts.append("\n📰 *Verified news:*")
+        for item in news_items[:3]:
+            parts.append(f"• {item}")
 
     parts.extend([
         "",
-        "🔖 #BTC  #crypto  #Bitcoin  #AIanalysis",
+        "🔖 #BTC  #crypto  #Bitcoin  #newsbacked",
         "⚠️ _Not financial advice. Trade at your own risk._",
     ])
     return "\n".join(parts)
