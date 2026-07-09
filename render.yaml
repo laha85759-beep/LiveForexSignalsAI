@@ -33,3 +33,13 @@ services:
         value: "300"
       - key: CRYPTO_MAX_CANDIDATES
         value: "5"
+      - key: LIVE_NEWS_ENABLED
+        value: "true"
+      - key: LIVE_NEWS_FEEDS
+        value: "https://feeds.feedburner.com/forexcom,https://www.investing.com/rss/news_1.rss"
+      - key: TWITTER_BEARER_TOKEN
+        sync: false
+      - key: TWITTER_USERNAMES
+        value: "reuters,investingcom,fxstreet,stocktwits,benzinga"
+      - key: TWITTER_SEARCH_QUERY
+        value: "forex crypto stocks india market"
