@@ -11,6 +11,7 @@ from urllib.request import urlopen
 from xml.etree import ElementTree as ET
 
 import yfinance as yf
+from dotenv import load_dotenv
 
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -19,6 +20,8 @@ import massive_data
 import realtime_alert
 import ai_agent
 import crypto_screener
+
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BOT_TOKEN2 = os.getenv("BOT_TOKEN2", "").strip()

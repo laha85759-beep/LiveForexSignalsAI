@@ -5,6 +5,16 @@ from unittest.mock import AsyncMock, patch
 import ai_agent
 import main
 
+class EnvironmentStartupTests(unittest.TestCase):
+    def test_startup_loads_local_env_before_config_constants(self):
+        source = inspect.getsource(main)
+
+        self.assertIn("from dotenv import load_dotenv", source)
+        self.assertLess(
+            source.index("load_dotenv()"),
+            source.index("BOT_TOKEN = os.getenv"),
+        )
+
 
 class NewsHelpersTests(unittest.TestCase):
     def test_build_newsdata_url_uses_query_and_api_key(self):
@@ -123,7 +133,9 @@ class NewsHelpersTests(unittest.TestCase):
 
     def test_generate_trade_suggestion_from_bias(self):
         article = {"title": "Dollar gains after hawkish Fed data"}
-        suggestion = main.generate_trade_suggestion(article, "USD")
+        prices = {"EUR/USD": 1.08, "USD/JPY": 162.0, "GBP/USD": 1.33, "USD/CAD": 1.42}
+        with patch.object(main, "fetch_current_prices", return_value=prices):
+            suggestion = main.generate_trade_suggestion(article, "USD")
 
         self.assertIn("BUY", suggestion)
         self.assertIn("USD", suggestion)
