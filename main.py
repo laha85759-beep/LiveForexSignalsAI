@@ -1,12 +1,14 @@
 import asyncio
 import json
 import os
+import re
 from contextlib import contextmanager
 from datetime import datetime, time, timedelta, timezone
 from html import escape
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import urlopen
+from xml.etree import ElementTree as ET
 
 import yfinance as yf
 
@@ -35,6 +37,11 @@ FINNHUB_BASE = "https://finnhub.io/api/v1"
 NEWS_PROVIDER = os.getenv("NEWS_PROVIDER", "auto").strip().lower()
 FETCH_INTERVAL_SECONDS = int(os.getenv("FETCH_INTERVAL_SECONDS", "900"))
 HIGH_IMPACT_CHECK_INTERVAL = int(os.getenv("HIGH_IMPACT_CHECK_INTERVAL", "60"))
+LIVE_NEWS_ENABLED = os.getenv("LIVE_NEWS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+LIVE_NEWS_FEEDS = [item.strip() for item in os.getenv("LIVE_NEWS_FEEDS", "").split(",") if item.strip()]
+TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN", "").strip()
+TWITTER_USERNAMES = [item.strip() for item in os.getenv("TWITTER_USERNAMES", "reuters,investingcom,fxstreet,stocktwits,benzinga").split(",") if item.strip()]
+TWITTER_SEARCH_QUERY = os.getenv("TWITTER_SEARCH_QUERY", "forex crypto stocks india market").strip()
 
 SENT_KEYS_FILE = "sent_articles.json"
 SIGNAL_LOG_FILE = "signal_log.json"
@@ -862,6 +869,222 @@ def build_newsapi_url(query: str) -> str:
         "pageSize": "25",
     }
     return f"{NEWSAPI_URL}?{urlencode(params)}"
+
+
+def _strip_html(text: str | None) -> str:
+    if not text:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = text.replace("&nbsp;", " ").replace("&amp;", "&")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _find_child_text(parent: Any, names: list[str]) -> str:
+    if parent is None:
+        return ""
+    for name in names:
+        child = parent.find(name)
+        if child is not None and (child.text or "").strip():
+            return _strip_html(child.text)
+    for child in parent.iter():
+        tag = child.tag.split("}")[-1]
+        if tag in names and (child.text or "").strip():
+            return _strip_html(child.text)
+    return ""
+
+
+def _extract_link(entry: Any) -> str:
+    for child in entry.iter():
+        if child.tag.split("}")[-1] == "link":
+            href = child.get("href") or (child.text or "").strip()
+            if href:
+                return href
+    return ""
+
+
+def _guess_source_name(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+
+        host = urlparse(url).netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return host.split(".")[0].replace("-", " ").title()
+    except Exception:
+        return "Live News"
+
+
+def _parse_rss_or_atom(content: str, source_name: str) -> list[dict[str, Any]]:
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError:
+        return []
+
+    entries = []
+    if root.tag.endswith("rss"):
+        entries = root.findall("./channel/item")
+    elif root.tag.endswith("feed"):
+        entries = root.findall("./entry")
+    else:
+        return []
+
+    articles: list[dict[str, Any]] = []
+    for entry in entries:
+        title = _find_child_text(entry, ["title"]) or _find_child_text(entry, ["headline"])
+        description = _find_child_text(entry, ["description", "summary", "content"])
+        link = _extract_link(entry)
+        pub_date = _find_child_text(entry, ["published", "updated", "pubDate", "pubdate"])
+        if title:
+            articles.append(
+                {
+                    "title": _strip_html(title),
+                    "description": _strip_html(description),
+                    "link": link,
+                    "pubDate": pub_date,
+                    "source_name": source_name,
+                    "keywords": [],
+                }
+            )
+    return articles
+
+
+def _parse_html_page(content: str, url: str) -> list[dict[str, Any]]:
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", content, flags=re.IGNORECASE | re.DOTALL)
+    title = _strip_html(title_match.group(1)) if title_match else ""
+    desc_match = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']', content, flags=re.IGNORECASE)
+    description = _strip_html(desc_match.group(1)) if desc_match else ""
+    if not title:
+        return []
+    return [{
+        "title": title,
+        "description": description,
+        "link": url,
+        "pubDate": "",
+        "source_name": _guess_source_name(url),
+        "keywords": [],
+    }]
+
+
+def fetch_live_news_from_url(url: str) -> list[dict[str, Any]]:
+    if not url:
+        return []
+    try:
+        with urlopen(url, timeout=15) as response:
+            content = response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+
+    lower = content.lower()
+    if "<rss" in lower or "<feed" in lower or "<?xml" in lower:
+        return _parse_rss_or_atom(content, _guess_source_name(url))
+    return _parse_html_page(content, url)
+
+
+def fetch_twitter_posts() -> list[dict[str, Any]]:
+    if not TWITTER_BEARER_TOKEN:
+        return []
+
+    try:
+        import requests
+    except Exception:
+        return []
+
+    results: list[dict[str, Any]] = []
+    headers = {"Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"}
+
+    try:
+        if TWITTER_USERNAMES:
+            for username in TWITTER_USERNAMES:
+                user_resp = requests.get(f"https://api.twitter.com/2/users/by/username/{username}", headers=headers, timeout=15)
+                user_resp.raise_for_status()
+                user_id = user_resp.json().get("data", {}).get("id")
+                if not user_id:
+                    continue
+                tweets_resp = requests.get(
+                    f"https://api.twitter.com/2/users/{user_id}/tweets?max_results=5&tweet.fields=created_at",
+                    headers=headers,
+                    timeout=15,
+                )
+                tweets_resp.raise_for_status()
+                for tweet in tweets_resp.json().get("data", []):
+                    text = tweet.get("text") or ""
+                    if not text:
+                        continue
+                    results.append(
+                        {
+                            "title": text,
+                            "description": "",
+                            "link": f"https://x.com/{username}/status/{tweet.get('id')}",
+                            "pubDate": tweet.get("created_at", ""),
+                            "source_name": username,
+                            "keywords": [],
+                        }
+                    )
+        elif TWITTER_SEARCH_QUERY:
+            search_resp = requests.get(
+                f"https://api.twitter.com/2/tweets/search/recent?q={TWITTER_SEARCH_QUERY}&max_results=5&tweet.fields=created_at",
+                headers=headers,
+                timeout=15,
+            )
+            search_resp.raise_for_status()
+            for tweet in search_resp.json().get("data", []):
+                text = tweet.get("text") or ""
+                if not text:
+                    continue
+                results.append(
+                    {
+                        "title": text,
+                        "description": "",
+                        "link": f"https://x.com/i/web/status/{tweet.get('id')}",
+                        "pubDate": tweet.get("created_at", ""),
+                        "source_name": "Twitter",
+                        "keywords": [],
+                    }
+                )
+    except Exception:
+        return []
+
+    return results
+
+
+def collect_live_market_news(raw_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    articles: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title") or item.get("headline") or item.get("name") or item.get("text") or ""
+        if not title or not str(title).strip():
+            continue
+        article = {
+            "article_id": item.get("article_id") or item.get("id") or item.get("link") or item.get("url") or title,
+            "title": str(title).strip(),
+            "description": item.get("description") or item.get("summary") or item.get("content") or item.get("text") or "",
+            "link": item.get("link") or item.get("url") or item.get("share_url") or "",
+            "pubDate": item.get("pubDate") or item.get("published_at") or item.get("publishedAt") or item.get("created_at") or item.get("date") or "",
+            "source_name": item.get("source_name") or item.get("source") or item.get("author") or item.get("provider") or "Live News",
+            "keywords": item.get("keywords") or [],
+        }
+        if article.get("description") and isinstance(article.get("description"), str):
+            article["description"] = article["description"].strip()
+        key = article_key(article)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        articles.append(article)
+    return articles
+
+
+def fetch_live_market_news() -> list[dict[str, Any]]:
+    if not LIVE_NEWS_ENABLED:
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    candidates.extend(fetch_twitter_posts())
+    for feed_url in LIVE_NEWS_FEEDS:
+        candidates.extend(fetch_live_news_from_url(feed_url))
+    return collect_live_market_news(candidates)
 
 
 def normalize_newsdata_article(article: dict[str, Any]) -> dict[str, Any]:
@@ -1847,15 +2070,29 @@ def fetch_latest_articles(query: str = FOREX_QUERY) -> list[dict[str, Any]]:
             if k and k not in seen:
                 seen.add(k)
                 unique.append(a)
-        return unique
+        return unique + fetch_live_market_news()
 
     url = build_newsapi_url(query) if provider == "newsapi" else build_newsdata_url(query)
     with urlopen(url, timeout=30) as response:
         payload = json.load(response)
 
     if provider == "newsapi":
-        return load_newsapi_articles(payload)
-    return load_newsdata_articles(payload)
+        api_articles = load_newsapi_articles(payload)
+    else:
+        api_articles = load_newsdata_articles(payload)
+
+    live_articles = fetch_live_market_news()
+    combined = api_articles + live_articles
+    seen = set()
+    unique = []
+    for article in combined:
+        key = article_key(article)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        unique.append(article)
+    return unique
 
 
 def is_recent(article: dict[str, Any], max_age_hours: int = 48) -> bool:
@@ -2211,14 +2448,14 @@ def format_forex_message(article: dict[str, Any]) -> str:
                 theme = _get_today_theme()
                 sep = _style_sep(theme)
                 lines = [
-                    _style_header(f"TradeSignal Pro — {dir_icon}", theme),
+                    _style_header(f"TradeSignal Pro | AI Signal — {dir_icon}", theme),
                     f"",
                     f"`Asset      ` *{pair}*   _{inst_name}_",
                     f"`Timeframe  ` H1  ·  {theme['accent']} {theme['name']}",
                     f"",
                     f"`{sep}`",
                     _style_label("Entry",      _price_str(e, pair)),
-                    _style_label("Stop Loss",  f"{_price_str(s, pair)}  ({-_price_str(abs(s-e), pair)})"),
+                    _style_label("Stop Loss",  f"{_price_str(s, pair)}  ({_price_str(s - e, pair)})"),
                     _style_label("TP 1",       f"{_price_str(t1, pair)}  (+{_price_str(abs(t1-e), pair)})"),
                     _style_label("TP 2",       f"{_price_str(t2, pair)}  (+{_price_str(abs(t2-e), pair)})"),
                     _style_label("Risk:Reward", f"1 : {rr_str}"),
@@ -2342,7 +2579,7 @@ def format_india_message(article: dict[str, Any]) -> str:
     theme = _get_today_theme()
     sep = _style_sep(theme)
     lines = [
-        _style_header(f"NSE / BSE Signal — {dir_icon}", theme),
+        _style_header(f"NSE / BSE SIGNAL — {dir_icon}", theme),
         f"`{sep}`",
         f"`Asset      ` *{asset}*  ·  {inst_name}",
         f"`{theme['name']}` _{title[:80]}_",
@@ -2489,7 +2726,7 @@ def format_intraday_message(article: dict[str, Any]) -> str:
     theme = _get_today_theme()
     sep = _style_sep(theme)
     lines = [
-        _style_header(f"Intraday Signal — {exchange_tag}", theme),
+        _style_header(f"Intraday SIGNAL — {exchange_tag}", theme),
         f"`{sep}`",
         f"`Asset      ` *{asset}*  ·  {inst_name}  |  {dir_icon}",
         f"`{theme['name']}` _{title[:80]}_",

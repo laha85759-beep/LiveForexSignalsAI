@@ -21,6 +21,11 @@ This worker fetches forex-relevant headlines from Newsdata or News API and forwa
 - `FETCH_INTERVAL_SECONDS`: polling interval in seconds, default `900`
 - `MAX_ARTICLES_PER_CYCLE`: max Telegram posts per poll, default `5`
 - `NEWS_QUERY`: query string, default `forex OR "foreign exchange" OR (dollar AND fed) OR (euro AND ecb) OR (pound AND boe) OR (yen AND boj) OR (gold AND fed)`
+- `LIVE_NEWS_ENABLED`: turn on real-time social/web news aggregation, default `true`
+- `LIVE_NEWS_FEEDS`: comma-separated RSS/Atom or HTML feed URLs for live market sources
+- `TWITTER_BEARER_TOKEN`: bearer token for Twitter/X API access
+- `TWITTER_USERNAMES`: comma-separated X accounts to monitor such as `reuters,investingcom,fxstreet,stocktwits,benzinga`
+- `TWITTER_SEARCH_QUERY`: fallback Twitter search query when no usernames are supplied
 
 ## Local run
 1. Install dependencies: `pip install -r requirements.txt`

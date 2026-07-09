@@ -160,6 +160,37 @@ class NewsHelpersTests(unittest.TestCase):
         self.assertEqual(articles[0]["source_name"], "Reuters")
         self.assertEqual(articles[0]["link"], "https://example.com/a")
 
+    def test_collect_live_market_news_normalizes_and_deduplicates(self):
+        raw_items = [
+            {
+                "title": "Fed holds rates as inflation cools",
+                "description": "The Federal Reserve kept rates unchanged.",
+                "link": "https://example.com/fed",
+                "source": "Reuters",
+                "published_at": "2026-07-09T10:00:00Z",
+            },
+            {
+                "title": "Fed holds rates as inflation cools",
+                "description": "The Federal Reserve kept rates unchanged.",
+                "link": "https://example.com/fed",
+                "source": "Reuters",
+                "published_at": "2026-07-09T10:00:00Z",
+            },
+            {
+                "title": "Nifty jumps on RBI policy relief",
+                "description": "Indian stocks extended gains after RBI comments.",
+                "link": "https://example.com/nifty",
+                "source": "Moneycontrol",
+                "published_at": "2026-07-09T10:05:00Z",
+            },
+        ]
+
+        articles = main.collect_live_market_news(raw_items)
+
+        self.assertEqual(len(articles), 2)
+        self.assertEqual(articles[0]["source_name"], "Reuters")
+        self.assertIn("Fed holds rates", articles[0]["title"])
+
 
 class BilingualAndStockTests(unittest.TestCase):
     def test_translate_to_bengali_handles_import_error(self):
