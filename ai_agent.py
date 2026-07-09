@@ -376,7 +376,11 @@ def format_btc_market_update(ai_output: str, btc_price: float | None = None) -> 
         elif line.upper().startswith("NEWS|"):
             raw = line.split("|", 1)[-1].strip()
             if raw:
-                parts = [p.strip(" •-") for p in raw.replace("•", "\n").split("\n") if p.strip(" •-")]
+                parts = []
+                for part in raw.replace("•", "\n").splitlines():
+                    cleaned = part.strip(" •-")
+                    if cleaned:
+                        parts.append(cleaned)
                 news_items.extend(parts)
         elif line.upper().startswith("TRADE|"):
             trade_setup = line.split("|", 1)[-1].strip()
