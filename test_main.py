@@ -318,6 +318,36 @@ class BilingualAndStockTests(unittest.TestCase):
 
 
 class AIQuestionTests(unittest.TestCase):
+    def test_institutional_prompt_registry_contains_all_image_prompts(self):
+        self.assertEqual(len(main.INSTITUTIONAL_ANALYSIS_PROMPTS), 10)
+        self.assertIn("technical_analysis", main.INSTITUTIONAL_ANALYSIS_PROMPTS)
+        self.assertIn("macro_impact", main.INSTITUTIONAL_ANALYSIS_PROMPTS)
+
+    def test_detect_institutional_analysis_prompt_routes_technical_request(self):
+        match = main.detect_institutional_analysis_prompt("Technical analysis of Nifty with RSI and MACD")
+
+        self.assertIsNotNone(match)
+        prompt_id, config = match
+        self.assertEqual(prompt_id, "technical_analysis")
+        self.assertIn("Citadel-Grade", config["title"])
+
+    def test_ai_answer_question_uses_institutional_framework_when_matched(self):
+        captured = {}
+
+        def fake_ai(prompt, system_prompt=None):
+            captured["prompt"] = prompt
+            captured["system_prompt"] = system_prompt
+            return "analysis"
+
+        with patch.object(main, "_best_ai", side_effect=fake_ai), \
+             patch.object(main, "build_market_context", return_value="Current prices: BTC/USD: 100000."):
+            result = main.ai_answer_question("Give me DCF valuation for TSLA")
+
+        self.assertEqual(result, "analysis")
+        self.assertIn("Morgan Stanley-Style DCF Valuation Deep Dive", captured["prompt"])
+        self.assertIn("Weighted average cost of capital", captured["prompt"])
+        self.assertEqual(captured["system_prompt"], main.INSTITUTIONAL_ANALYSIS_SYSTEM_PROMPT)
+
     def test_ai_answer_question_returns_none_without_key(self):
         with patch.object(main, "GROQ_API_KEY", ""), \
              patch.object(main, "fetch_current_prices", return_value={}):

@@ -763,6 +763,204 @@ TRADING_SYSTEM_PROMPT = (
     "Keep financial terms in English. "
     "Use bullet points or numbered lists for readability."
 )
+INSTITUTIONAL_ANALYSIS_SYSTEM_PROMPT = (
+    "You are a professional investment and trading analyst. "
+    "Use institutional-quality structure, but do not claim to work for any bank, fund, or consulting firm. "
+    "Be factual, data-driven, and transparent about assumptions. "
+    "If live data is unavailable, say what data is needed and provide a conditional framework. "
+    "Never present the output as financial advice."
+)
+
+INSTITUTIONAL_ANALYSIS_PROMPTS: dict[str, dict[str, Any]] = {
+    "stock_screener": {
+        "title": "Goldman Sachs-Level Stock Screener",
+        "keywords": ("stock screener", "screen stocks", "top 10 stocks", "investment goals", "p/e ratio"),
+        "prompt": (
+            "I need a complete stock screening framework for my investment goals.\n\n"
+            "Analyze and provide:\n"
+            "- Top 10 stocks matching my criteria with ticker symbols\n"
+            "- P/E ratio analysis compared to sector averages\n"
+            "- Revenue growth trends over the last 5 years\n"
+            "- Debt-to-equity health check for each pick\n"
+            "- Dividend yield and payout sustainability score\n"
+            "- Competitive moat rating: weak, moderate, or strong\n"
+            "- Bull case and bear case price targets for 12 months\n"
+            "- Risk rating on a scale of 1-10 with clear reasoning\n"
+            "- Entry price zones and stop-loss suggestions\n\n"
+            "Format as a professional equity research screening report with a summary table."
+        ),
+    },
+    "dcf_valuation": {
+        "title": "Morgan Stanley-Style DCF Valuation Deep Dive",
+        "keywords": ("dcf", "discounted cash flow", "valuation", "fair value", "wacc", "terminal value"),
+        "prompt": (
+            "I need a full discounted cash flow analysis for a specific stock.\n\n"
+            "Build out:\n"
+            "- 5-year revenue projection with growth assumptions\n"
+            "- Operating margin estimates based on historical trends\n"
+            "- Free cash flow calculations year by year\n"
+            "- Weighted average cost of capital estimate\n"
+            "- Terminal value using both exit multiple and perpetuity growth methods\n"
+            "- Sensitivity table showing fair value at different discount rates\n"
+            "- Comparison of DCF value vs current market price\n"
+            "- Clear verdict: undervalued, fairly valued, or overvalued\n"
+            "- Key assumptions that could break the model\n\n"
+            "Format as an investment banking valuation memo with tables and clear math."
+        ),
+    },
+    "risk_analysis": {
+        "title": "Bridgewater-Inspired Risk Analysis Framework",
+        "keywords": ("risk analysis", "risk assessment", "portfolio risk", "correlation", "drawdown", "hedging"),
+        "prompt": (
+            "I need a complete risk assessment of my current portfolio.\n\n"
+            "Evaluate:\n"
+            "- Correlation analysis between my holdings\n"
+            "- Sector concentration risk with percentage breakdown\n"
+            "- Geographic exposure and currency risk factors\n"
+            "- Interest rate sensitivity for each position\n"
+            "- Recession stress test showing estimated drawdown\n"
+            "- Liquidity risk rating for each holding\n"
+            "- Single stock risk and position sizing recommendations\n"
+            "- Tail risk scenarios with probability estimates\n"
+            "- Hedging strategies to reduce my top 3 risks\n"
+            "- Rebalancing suggestions with specific allocation percentages\n\n"
+            "Format as a professional risk management report with a heat map-style summary."
+        ),
+    },
+    "earnings_breakdown": {
+        "title": "JPMorgan-Level Earnings Breakdown",
+        "keywords": ("earnings", "quarter", "eps", "beat or miss", "implied move", "guidance"),
+        "prompt": (
+            "I need a complete earnings analysis before a company reports.\n\n"
+            "Deliver:\n"
+            "- Last 4 quarters earnings vs estimates, including beat or miss history\n"
+            "- Revenue and EPS consensus estimates for the upcoming quarter\n"
+            "- Key metrics Wall Street is watching for this company\n"
+            "- Segment-by-segment revenue breakdown and trends\n"
+            "- Management guidance from the last earnings call summarized\n"
+            "- Options market implied move for earnings day\n"
+            "- Historical stock price reaction after the last 4 earnings reports\n"
+            "- Bull case scenario and price impact estimate\n"
+            "- Bear case scenario and downside risk estimate\n"
+            "- Recommended play: buy before, sell before, or wait\n\n"
+            "Format as a pre-earnings research brief with a decision summary at the top."
+        ),
+    },
+    "portfolio_construction": {
+        "title": "BlackRock-Style Portfolio Construction Model",
+        "keywords": ("portfolio construction", "asset allocation", "investment policy", "etf", "rebalance"),
+        "prompt": (
+            "I need a custom investment portfolio built from scratch for my situation.\n\n"
+            "Create:\n"
+            "- Exact asset allocation with percentages across stocks, bonds, and alternatives\n"
+            "- Specific ETF or fund recommendations for each category with ticker symbols\n"
+            "- Core holdings vs satellite positions clearly labeled\n"
+            "- Expected annual return range based on historical data\n"
+            "- Expected maximum drawdown in a bad year\n"
+            "- Rebalancing schedule and trigger rules\n"
+            "- Tax efficiency strategy for my account type\n"
+            "- Dollar-cost averaging plan if I invest monthly\n"
+            "- Benchmark to measure my performance against\n"
+            "- One-page investment policy statement I can follow\n\n"
+            "Format as a professional investment policy document with an allocation pie chart description."
+        ),
+    },
+    "technical_analysis": {
+        "title": "Citadel-Grade Technical Analysis System",
+        "keywords": ("technical analysis", "support", "resistance", "rsi", "macd", "bollinger", "fibonacci"),
+        "prompt": (
+            "I need a full technical analysis breakdown of a stock, index, crypto, forex pair, or commodity.\n\n"
+            "Analyze:\n"
+            "- Current trend direction on daily, weekly, and monthly timeframes\n"
+            "- Key support and resistance levels with exact price points\n"
+            "- Moving average analysis for 50-day, 100-day, and 200-day averages\n"
+            "- Crossover signals, RSI, MACD, and Bollinger Band readings with plain-English interpretation\n"
+            "- Volume trend analysis and what it signals about buyer vs seller strength\n"
+            "- Chart pattern identification such as head and shoulders or cup and handle\n"
+            "- Fibonacci retracement levels for potential bounce zones\n"
+            "- Ideal entry price, stop-loss level, and profit target\n"
+            "- Risk-to-reward ratio for the current setup\n"
+            "- Confidence rating: strong buy, buy, neutral, sell, or strong sell\n\n"
+            "Format as a technical analysis report card with a clear trade plan summary."
+        ),
+    },
+    "dividend_strategy": {
+        "title": "Harvard Endowment-Inspired Dividend Strategy",
+        "keywords": ("dividend", "income portfolio", "passive income", "drip", "payout ratio", "yield"),
+        "prompt": (
+            "I need a dividend income portfolio that generates reliable passive income.\n\n"
+            "Build:\n"
+            "- 15-20 dividend stock picks with ticker symbols and current yield\n"
+            "- Dividend safety score for each stock on a 1-10 scale\n"
+            "- Consecutive years of dividend growth for each pick\n"
+            "- Payout ratio analysis to flag any unsustainable dividends\n"
+            "- Monthly income projection based on my investment amount\n"
+            "- Sector diversification breakdown to avoid concentration\n"
+            "- Dividend growth rate estimate for the next 5 years\n"
+            "- DRIP reinvestment projection showing compounding over 10 years\n"
+            "- Tax implications summary for dividends in my account type\n"
+            "- Ranked list from safest to most aggressive picks\n\n"
+            "Format as a dividend portfolio blueprint with an income projection table."
+        ),
+    },
+    "competitive_advantage": {
+        "title": "Bain-Style Competitive Advantage Analysis",
+        "keywords": ("competitive advantage", "competitive landscape", "sector analysis", "market share", "swot"),
+        "prompt": (
+            "I need a full competitive landscape report to find the best stock to buy in a sector.\n\n"
+            "Provide:\n"
+            "- Top 5-7 competitors in the sector with market cap comparison\n"
+            "- Revenue and profit margin comparison in a table format\n"
+            "- Competitive moat analysis for each company: brand, cost, network, switching\n"
+            "- Market share trends over the last 3 years\n"
+            "- Management quality rating based on capital allocation track record\n"
+            "- Innovation pipeline and R&D spending comparison\n"
+            "- Biggest threats to the sector: regulation, disruption, macro\n"
+            "- SWOT analysis for the top 2 companies\n"
+            "- Single best stock pick with a clear rationale\n"
+            "- Catalysts that could move the winner stock in the next 12 months\n\n"
+            "Format as a competitive strategy deck summary with comparison tables."
+        ),
+    },
+    "pattern_finder": {
+        "title": "Renaissance Technologies Pattern Finder",
+        "keywords": ("pattern", "seasonal", "anomaly", "statistical edge", "short interest", "options activity"),
+        "prompt": (
+            "I need you to identify hidden patterns and anomalies in a stock's behavior.\n\n"
+            "Research:\n"
+            "- Seasonal patterns: best and worst months historically\n"
+            "- Day-of-week performance patterns if any exist\n"
+            "- Correlation with major market events such as Fed meetings and CPI reports\n"
+            "- Insider buying and selling patterns from recent filings\n"
+            "- Institutional ownership trend: are big funds buying or selling\n"
+            "- Short interest analysis and squeeze potential\n"
+            "- Unusual options activity signals worth watching\n"
+            "- Price behavior around earnings: pre-run and post-gap patterns\n"
+            "- Sector rotation signals that affect this stock\n"
+            "- Statistical edge summary: what gives this stock a quantifiable advantage\n\n"
+            "Format as a quantitative research memo with data tables and pattern summaries."
+        ),
+    },
+    "macro_impact": {
+        "title": "McKinsey-Level Macro Impact Assessment",
+        "keywords": ("macro", "macroeconomic", "interest rate", "inflation", "gdp", "federal reserve", "economy"),
+        "prompt": (
+            "I need a macro analysis showing how current economic conditions affect my portfolio.\n\n"
+            "Analyze:\n"
+            "- Current interest rate environment and its impact on growth vs value stocks\n"
+            "- Inflation trend analysis and which sectors benefit or suffer\n"
+            "- GDP growth forecast and what it means for corporate earnings\n"
+            "- US dollar strength impact on international vs domestic holdings\n"
+            "- Employment data trends and consumer spending implications\n"
+            "- Federal Reserve policy outlook for the next 6-12 months\n"
+            "- Global risk factors: geopolitics, trade wars, supply chains\n"
+            "- Sector rotation recommendation based on the current economic cycle\n"
+            "- Specific portfolio adjustments I should consider right now\n"
+            "- Timeline: when these macro factors will most likely impact markets\n\n"
+            "Format as an executive macro strategy briefing with a clear action plan."
+        ),
+    },
+}
 
 
 def load_seen_keys() -> set[str]:
@@ -1746,8 +1944,42 @@ def ai_analyze_news(article: dict[str, Any]) -> str | None:
     return _best_ai(prompt, system_prompt=TRADING_SYSTEM_PROMPT)
 
 
+def detect_institutional_analysis_prompt(question: str) -> tuple[str, dict[str, Any]] | None:
+    question_lower = question.lower()
+    for prompt_id, config in INSTITUTIONAL_ANALYSIS_PROMPTS.items():
+        if any(keyword in question_lower for keyword in config["keywords"]):
+            return prompt_id, config
+    return None
+
+
+def list_institutional_prompt_titles() -> str:
+    return "\n".join(
+        f"- {config['title']}"
+        for config in INSTITUTIONAL_ANALYSIS_PROMPTS.values()
+    )
+
+
+def build_institutional_analysis_prompt(question: str, config: dict[str, Any], market_ctx: str) -> str:
+    return (
+        f"Analysis framework: {config['title']}\n\n"
+        f"{config['prompt']}\n\n"
+        f"Current market context available to the app:\n{market_ctx or 'No live price context available.'}\n\n"
+        f"User request and details:\n{question}\n\n"
+        "Adapt the framework to the asset, portfolio, sector, or trade in the user request. "
+        "If the user omitted required inputs, still provide the best actionable framework and clearly list the missing inputs. "
+        "Keep Telegram readability: short sections, compact tables, and a final trade/portfolio action summary. "
+        "Stay under 450 words."
+    )
+
+
 def ai_answer_question(question: str) -> str | None:
     market_ctx = build_market_context()
+    matched_prompt = detect_institutional_analysis_prompt(question)
+    if matched_prompt:
+        _, config = matched_prompt
+        prompt = build_institutional_analysis_prompt(question, config, market_ctx)
+        return _best_ai(prompt, system_prompt=INSTITUTIONAL_ANALYSIS_SYSTEM_PROMPT)
+
     prompt = (
         "You are an expert forex and stock market trading analyst. "
         "Answer the user's trading question concisely and accurately. "
@@ -1775,7 +2007,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "- Is EUR/USD bullish today?\n"
         "- Should I buy gold now?\n"
         "- Technical analysis of Nifty\n"
-        "- What is the market outlook for this week?",
+        "- DCF valuation for TSLA\n"
+        "- Portfolio risk analysis: AAPL 40%, NIFTY 30%, BTC 30%\n\n"
+        "Use /prompts to see all advanced analysis frameworks.",
         parse_mode="HTML",
     )
 
@@ -1789,7 +2023,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         print(f"[SUBSCRIBE] Chat {chat_id} subscribed via /help")
     await update.message.reply_text(
         "Send any trading or market question. "
-        "I will analyze it using AI and provide trading insights."
+        "I will analyze it using AI and provide trading insights.\n\n"
+        "Advanced examples:\n"
+        "- Technical analysis of BTC/USD\n"
+        "- DCF valuation for NVDA\n"
+        "- Earnings breakdown for AAPL\n"
+        "- Macro impact on my portfolio\n\n"
+        "Use /prompts to see every framework."
+    )
+
+
+async def prompts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "<b>Advanced Analysis Frameworks</b>\n\n"
+        f"{escape(list_institutional_prompt_titles())}\n\n"
+        "Ask naturally, for example: DCF valuation for TSLA, technical analysis of Nifty, "
+        "portfolio construction for age 30 with monthly SIP, or dividend strategy for $50,000.",
+        parse_mode="HTML",
     )
 
 
@@ -3421,6 +3671,7 @@ async def worker_loop() -> None:
     app.add_handler(CommandHandler("subscribe", subscribe_command))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
     app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("prompts", prompts_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question))
 
     jq = app.job_queue
@@ -3434,6 +3685,7 @@ async def worker_loop() -> None:
         app3.add_handler(CommandHandler("subscribe", subscribe_command))
         app3.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
         app3.add_handler(CommandHandler("status", status_command))
+        app3.add_handler(CommandHandler("prompts", prompts_command))
         app3.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question))
         print("[BOT3] Third bot polling enabled")
 
